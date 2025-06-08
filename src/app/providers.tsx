@@ -1,27 +1,45 @@
 'use client';
 
-import { OnchainKitProvider } from '@coinbase/onchainkit';
-import { WagmiConfig, createConfig } from 'wagmi';
+import type { ReactNode } from 'react';
+import { createConfig, http, WagmiConfig, cookieToInitialState } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
-import { injected } from 'wagmi/connectors';
-import { http } from 'viem';
+import { OnchainKitProvider } from '@coinbase/onchainkit';
+import { coinbaseWallet } from 'wagmi/connectors';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
 
 const config = createConfig({
   chains: [baseSepolia],
   connectors: [
-    injected(),
+    coinbaseWallet({
+      appName: 'Freelance Platform',
+    }),
   ],
   transports: {
-    [baseSepolia.id]: http('https://chain-proxy.wallet.coinbase.com?targetName=base-sepolia'),
+    [baseSepolia.id]: http('https://sepolia.base.org'),
   },
+  ssr: true,
 });
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, cookie }: { children: ReactNode; cookie?: string | null }) {
+  const [queryClient] = useState(() => new QueryClient());
+  const initialState = cookieToInitialState(config, cookie);
+
   return (
-    <WagmiConfig config={config}>
-      <OnchainKitProvider chain={baseSepolia}>
-        {children}
-      </OnchainKitProvider>
+    <WagmiConfig config={config} initialState={initialState}>
+      <QueryClientProvider client={queryClient}>
+        <OnchainKitProvider
+          apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
+          chain={baseSepolia}
+          rpcUrl={baseSepolia.rpcUrls.default.http[0]}
+          children={children}
+          config={{
+            wallet: {
+              display: 'modal',
+            },
+          }}
+        />
+      </QueryClientProvider>
     </WagmiConfig>
   );
-} 
+}

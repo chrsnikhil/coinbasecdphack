@@ -1,24 +1,29 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { Providers } from "./providers";
+import '@coinbase/onchainkit/styles.css';
+import './globals.css';
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import { Providers } from './providers';
+import { headers } from 'next/headers';
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "Freelance Platform - Base Sepolia",
-  description: "A decentralized freelancing platform on Base Sepolia",
+  title: 'Freelance Platform',
+  description: 'A decentralized freelancing platform on Base',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
+  const headersList = await headers();
+  const cookie = headersList.get("cookie");
+
   return (
     <html lang="en">
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        <Providers cookie={cookie}>{children}</Providers>
       </body>
     </html>
   );

@@ -1,11 +1,14 @@
-import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox";
-import * as dotenv from "dotenv";
+const { HardhatUserConfig } = require("hardhat/config");
+require("@nomicfoundation/hardhat-toolbox");
+const dotenv = require("dotenv");
 
 dotenv.config();
 
-const config: HardhatUserConfig = {
+const config = {
   solidity: "0.8.20",
+  paths: {
+    sources: "./src/contracts",
+  },
   networks: {
     baseSepolia: {
       url: process.env.BASE_SEPOLIA_RPC_URL || "https://chain-proxy.wallet.coinbase.com?targetName=base-sepolia",
@@ -19,4 +22,4 @@ const config: HardhatUserConfig = {
   },
 };
 
-export default config;
+module.exports = config;
