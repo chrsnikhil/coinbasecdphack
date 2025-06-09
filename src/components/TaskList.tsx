@@ -1,281 +1,420 @@
 'use client';
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts, useAccount } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
 import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
 import { formatEther } from 'viem';
 import React, { useEffect, useState } from 'react';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
+import { Button } from "@/components/ui/button";
+import toast, { Toaster } from 'react-hot-toast';
 
 interface Task {
-  creator: string;
   title: string;
   description: string;
   bounty: bigint;
+  creator: string;
   worker: string;
-  isCompleted: boolean;
   isActive: boolean;
+  isCompleted: boolean;
+  requiredFileTypes: string[];
+  submittedFileCID: string;
 }
 
-export function TaskList() {
-  const { address } = useAccount();
+interface TaskListProps {
+  tasks: Task[];
+  refetchTasks: () => void;
+}
+
+export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
+  const { address, isConnected } = useAccount();
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [acceptingTaskId, setAcceptingTaskId] = useState<number | null>(null);
-  const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
+  const [isSubmittingFile, setIsSubmittingFile] = useState(false);
+  const [submittingFileTaskId, setSubmittingFileTaskId] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyingTaskId, setApplyingTaskId] = useState<number | null>(null);
+  const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>(undefined);
+  const [currentToastId, setCurrentToastId] = useState<string | undefined>(undefined);
 
-  const { data: taskCountBigInt, refetch: refetchTaskCount, isError: isTaskCountError } = useReadContract({
-    address: contractConfig.address,
-    abi: FREELANCE_PLATFORM_ABI,
-    functionName: 'taskCount',
-  });
+  const { writeContract } = useWriteContract();
 
-  const taskCount = Number(taskCountBigInt || 0);
-
-  const contractCalls = Array.from({ length: taskCount }, (_, i) => ({
-    address: contractConfig.address,
-    abi: FREELANCE_PLATFORM_ABI,
-    functionName: 'getTask',
-    args: [BigInt(i)],
-  }));
-
-  const { 
-    data: fetchedTasks, 
-    refetch: refetchTasks,
-    isError: isTasksError,
-    isLoading: isLoadingTasks 
-  } = useReadContracts({
-    contracts: contractCalls,
-    query: {
-      enabled: taskCount > 0,
-      select: (data) => {
-        if (!data) return [];
-        
-        return data
-          .filter((item) => item.status === 'success' && item.result)
-          .map((item) => {
-            const [creator, title, description, bounty, worker, isCompleted, isActive] = item.result as [string, string, string, bigint, string, boolean, boolean];
-            return {
-              creator,
-              title,
-              description,
-              bounty,
-              worker,
-              isCompleted,
-              isActive,
-            } as Task;
-          });
-      },
-    },
-  });
-
-  const tasks: Task[] = fetchedTasks || [];
-
-  const { data: acceptHash, writeContract: acceptTaskContract } = useWriteContract();
-  const { isLoading: isAccepting, isSuccess: isAccepted } = useWaitForTransactionReceipt({
-    hash: acceptHash,
-  });
-
-  const { data: completeHash, writeContract: completeTaskContract, isError: isCompleteError } = useWriteContract();
-  const { isLoading: isCompleting, isSuccess: isCompletedTx, isError: isCompleteTxError } = useWaitForTransactionReceipt({
-    hash: completeHash,
+  const { isLoading: isTransactionPending, isSuccess: isTransactionSuccess } = useWaitForTransactionReceipt({
+    hash: pendingTxHash,
   });
 
   useEffect(() => {
-    if (isAccepted) {
-      refetchTaskCount();
+    if (isTransactionSuccess) {
       refetchTasks();
-      setAcceptingTaskId(null);
-      setSuccess('Task accepted successfully!');
-      setTimeout(() => setSuccess(null), 5000);
+      setPendingTxHash(undefined);
+      setIsApplying(false);
+      setApplyingTaskId(null);
+      setIsSubmittingFile(false);
+      setSubmittingFileTaskId(null);
+      setSelectedFile(null);
+      if (currentToastId) toast.dismiss(currentToastId);
+      toast.success('Transaction confirmed successfully!', { duration: 3000 });
+      setCurrentToastId(undefined);
     }
-  }, [isAccepted, refetchTaskCount, refetchTasks]);
+  }, [isTransactionSuccess, refetchTasks]);
 
-  useEffect(() => {
-    if (isCompletedTx) {
-      refetchTaskCount();
-      refetchTasks();
-      setCompletingTaskId(null);
-      const task = tasks[completingTaskId!];
-      if (task) {
-        setSuccess(`Task completed! ${formatEther(task.bounty)} ETH has been transferred to your wallet.`);
-      }
-      setTimeout(() => setSuccess(null), 5000);
-    }
-  }, [isCompletedTx, refetchTaskCount, refetchTasks, completingTaskId, tasks]);
-
-  useEffect(() => {
-    if (isCompleteError) {
-      setError('Failed to send transaction. Please try again.');
-      setCompletingTaskId(null);
-    }
-  }, [isCompleteError]);
-
-  useEffect(() => {
-    if (isCompleteTxError) {
-      setError('Transaction failed. Please try again.');
-      setCompletingTaskId(null);
-    }
-  }, [isCompleteTxError]);
-
-  const handleAcceptTask = (taskId: number) => {
-    console.log('Accepting task:', taskId);
-    console.log('Current address:', address);
-    setAcceptingTaskId(taskId);
-    setError(null);
-    acceptTaskContract({
-      address: contractConfig.address,
-      abi: FREELANCE_PLATFORM_ABI,
-      functionName: 'acceptTask',
-      args: [BigInt(taskId)],
-    });
-  };
-
-  const handleCompleteTask = (taskId: number) => {
-    console.log('Starting task completion:', {
-      taskId,
-      currentAddress: address,
-      taskDetails: tasks[taskId],
-      isCompleting,
-      completingTaskId
-    });
-
-    setCompletingTaskId(taskId);
-    setError(null);
+  const handleApply = async (taskId: number) => {
+    if (!address) return;
     
     try {
-      completeTaskContract({
-        address: contractConfig.address,
-        abi: FREELANCE_PLATFORM_ABI,
-        functionName: 'completeTask',
-        args: [BigInt(taskId)],
-      });
+      setError(null);
+      setIsApplying(true);
+      setApplyingTaskId(taskId);
 
-      // Add timeout to reset state if transaction gets stuck
-      setTimeout(() => {
-        if (completingTaskId === taskId) {
-          console.log('Transaction timeout - resetting state');
-          setCompletingTaskId(null);
-          setError('Transaction timed out. Please try again.');
+      const toastId = toast.loading('Applying for task...');
+      setCurrentToastId(toastId);
+
+      writeContract({
+        ...contractConfig,
+        functionName: 'acceptTask',
+        args: [BigInt(taskId)],
+      }, {
+        onSuccess: (hash) => {
+          setPendingTxHash(hash);
+          toast.loading('Confirming transaction...', { id: toastId });
+        },
+        onError: (err) => {
+          setError(err.message);
+          setIsApplying(false);
+          setApplyingTaskId(null);
+          toast.error(`Failed to apply: ${err.message}`, { id: toastId, duration: 3000 });
+          setCurrentToastId(undefined);
         }
-      }, 60000); // 60 seconds timeout
+      });
     } catch (err) {
-      console.error('Error completing task:', err);
-      setError('Failed to complete task. Please try again.');
-      setCompletingTaskId(null);
+      setError(err instanceof Error ? err.message : 'Failed to apply for task');
+      setIsApplying(false);
+      setApplyingTaskId(null);
+      toast.error('Failed to apply for task', { duration: 3000 });
+      setCurrentToastId(undefined);
     }
   };
 
-  if (isTaskCountError || isTasksError) {
-    return <div className="text-red-500">Error loading tasks. Please try again.</div>;
-  }
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+    } else {
+      setSelectedFile(null);
+    }
+  };
 
-  if (isLoadingTasks) {
-    return <div className="text-gray-600">Loading tasks...</div>;
-  }
+  const handleSubmitCompletion = async (taskId: number, task: Task) => {
+    if (!address || !selectedFile) return;
+
+    const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
+    if (task.requiredFileTypes.length > 0 && !task.requiredFileTypes.includes(fileExtension)) {
+      toast.error(`Invalid file type. Required: ${task.requiredFileTypes.join(', ')}`);
+      return;
+    }
+
+    // Validate task state before proceeding
+    if (!task.isActive) {
+      toast.error('This task is no longer active');
+      return;
+    }
+
+    if (task.worker !== address) {
+      toast.error('You are not the assigned worker for this task');
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsSubmittingFile(true);
+      setSubmittingFileTaskId(taskId);
+
+      const toastId = toast.loading('Uploading file to IPFS...');
+      setCurrentToastId(toastId);
+
+      let ipfsHash = '';
+      try {
+        // First, fetch the presigned URL from your API route
+        const presignedUrlResponse = await fetch('/api/pinata/presigned-url', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: selectedFile.name,
+            type: selectedFile.type,
+          }),
+        });
+
+        if (!presignedUrlResponse.ok) {
+          const errorData = await presignedUrlResponse.json();
+          throw new Error(`Failed to get presigned URL: ${errorData.error}`);
+        }
+
+        const { url } = await presignedUrlResponse.json();
+        console.log('Got presigned URL:', url);
+
+        // Create FormData to send the file
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        // Now, upload the file using the presigned URL
+        const uploadResponse = await fetch(url, {
+          method: 'POST',
+          body: formData,
+          // When using FormData, the browser automatically sets the Content-Type header with the correct boundary
+          // So, we don't need to set it manually here.
+          // headers: {
+          //   'Content-Type': selectedFile.type,
+          // },
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          console.error('Upload failed:', errorText);
+          throw new Error(`Upload failed with status: ${uploadResponse.status}`);
+        }
+
+        // Get the IPFS hash from the response
+        const responseData = await uploadResponse.json();
+        console.log('Upload response:', responseData);
+
+        if (!responseData.data || !responseData.data.cid) {
+          throw new Error('No IPFS hash received in response');
+        }
+
+        ipfsHash = responseData.data.cid;
+        toast.success('File uploaded to IPFS!', { id: toastId, duration: 2000 });
+      } catch (uploadError) {
+        console.error('Upload error:', uploadError);
+        setError(uploadError instanceof Error ? uploadError.message : 'Failed to upload file');
+        setIsSubmittingFile(false);
+        setSubmittingFileTaskId(null);
+        toast.error(`File upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`, { id: toastId, duration: 3000 });
+        setCurrentToastId(undefined);
+        return;
+      }
+
+      const submitToastId = toast.loading('Submitting task completion...');
+      setCurrentToastId(submitToastId);
+
+      console.log('Submitting task completion with:', {
+        taskId,
+        ipfsHash,
+        taskState: {
+          isActive: task.isActive,
+          worker: task.worker,
+          address,
+          bounty: task.bounty.toString()
+        }
+      });
+
+      writeContract({
+        ...contractConfig,
+        functionName: 'submitTaskCompletion',
+        args: [BigInt(taskId), ipfsHash],
+      }, {
+        onSuccess: (hash) => {
+          setPendingTxHash(hash);
+          toast.loading('Confirming transaction...', { id: submitToastId });
+        },
+        onError: (err) => {
+          console.error('Transaction error:', err);
+          setError(err.message);
+          setIsSubmittingFile(false);
+          setSubmittingFileTaskId(null);
+          toast.error(`Failed to submit: ${err.message}`, { id: submitToastId, duration: 3000 });
+          setCurrentToastId(undefined);
+        }
+      });
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to submit completion');
+      setIsSubmittingFile(false);
+      setSubmittingFileTaskId(null);
+      toast.error('Failed to submit completion', { duration: 3000 });
+      setCurrentToastId(undefined);
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900">Your Wallet Address</h3>
-        <p className="text-sm text-gray-500 break-all">{address || 'Not connected'}</p>
-      </div>
-
+    <div className="w-full max-w-7xl mx-auto px-4">
+      <Toaster position="top-left" toastOptions={{
+        style: {
+          background: '#000',
+          color: '#fff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+        },
+        success: {
+          iconTheme: {
+            primary: '#10B981',
+            secondary: '#fff',
+          },
+          duration: 3000,
+        },
+        error: {
+          iconTheme: {
+            primary: '#EF4444',
+            secondary: '#fff',
+          },
+          duration: 3000,
+        },
+        loading: {
+          // No explicit duration here, will be dismissed by success/error or manually
+        },
+      }} />
+      <h2 className="text-3xl font-bold mb-8 tracking-tight">
+        Available Tasks
+      </h2>
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-sm text-red-600">{error}</p>
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500">
+          {error}
         </div>
       )}
-
-      {success && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-sm text-green-600">{success}</p>
-        </div>
-      )}
-
-      <h2 className="text-2xl font-bold mb-4">Available Tasks</h2>
-      {tasks.length === 0 ? (
-        <p className="text-gray-500">No tasks available.</p>
-      ) : (
-        <div className="space-y-4">
+      <Carousel
+        opts={{
+          align: "start",
+          loop: true,
+        }}
+        className="w-full relative"
+      >
+        <CarouselContent className="-ml-4">
           {tasks.map((task, index) => (
-            <div key={index} className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-              <h3 className="text-xl font-semibold text-gray-900">{task.title}</h3>
-              <p className="text-gray-600 mt-2">{task.description}</p>
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">Bounty:</p>
-                  <p className="text-sm font-semibold text-[#0052FF]">{formatEther(task.bounty)} ETH</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">Creator:</p>
-                  <p className="text-sm text-gray-500 break-all">{task.creator}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">Worker:</p>
-                  <p className="text-sm text-gray-500 break-all">
-                    {task.worker === '0x0000000000000000000000000000000000000000' ? 'Not assigned' : task.worker}
-                  </p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">Status:</p>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    task.isCompleted 
-                      ? 'bg-green-100 text-green-800' 
-                      : task.isActive 
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    {task.isCompleted ? 'Completed' : task.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-                
-                {task.isActive && !task.isCompleted && task.worker === '0x0000000000000000000000000000000000000000' && (
-                  <button
-                    onClick={() => handleAcceptTask(index)}
-                    disabled={isAccepting && acceptingTaskId === index}
-                    className={`w-full mt-4 px-6 py-3 rounded-lg font-medium shadow-lg transition-all flex items-center justify-center space-x-2 ${
-                      isAccepting && acceptingTaskId === index
-                        ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                        : 'bg-[#0052FF] text-white hover:bg-[#0043CC]'
-                    }`}
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>{isAccepting && acceptingTaskId === index ? 'Accepting Task...' : 'Accept Task'}</span>
-                  </button>
-                )}
-                {task.isActive && !task.isCompleted && task.worker === address && (
-                  <button
-                    onClick={() => handleCompleteTask(index)}
-                    disabled={isCompleting && completingTaskId === index}
-                    className={`w-full mt-4 px-6 py-3 rounded-lg font-medium shadow-lg transition-all flex items-center justify-center space-x-2 ${
-                      isCompleting && completingTaskId === index
-                        ? 'bg-gray-300 cursor-not-allowed'
-                        : 'bg-green-500 text-white hover:bg-green-600'
-                    }`}
-                  >
-                    <svg 
-                      className={`w-5 h-5 ${
-                        isCompleting && completingTaskId === index ? '!text-gray-800' : 'text-white'
-                      }`} 
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className={`${
-                      isCompleting && completingTaskId === index ? '!text-gray-800' : 'text-white'
-                    }`}>
-                      {isCompleting && completingTaskId === index ? 'Completing Task...' : 'Complete Task & Claim Bounty'}
+            <CarouselItem key={index} className="pl-4 md:basis-1/2 lg:basis-1/3">
+              <div className="bg-black/90 backdrop-blur-sm rounded-lg p-6 border border-white/10 hover:border-white/20 transition-all duration-300 h-full flex flex-col shadow-lg">
+                <div className="flex-grow">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xl font-semibold line-clamp-1 text-white">{task.title}</h3>
+                    <div className="flex items-center gap-2">
+                      {task.isCompleted && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/20">
+                          Completed
+                        </span>
+                      )}
+                      {!task.isActive && !task.isCompleted && task.worker !== '0x0000000000000000000000000000000000000000' && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400 border border-yellow-500/20">
+                          In Progress
+                        </span>
+                      )}
+                      {task.isActive && task.worker === '0x0000000000000000000000000000000000000000' && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/20">
+                          Open
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-zinc-300 mb-4 line-clamp-2">{task.description}</p>
+                  <div className="flex flex-col gap-2 text-sm text-zinc-400">
+                    <span className="flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {formatEther(task.bounty)} ETH
                     </span>
-                  </button>
-                )}
+                    {task.requiredFileTypes && task.requiredFileTypes.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-2.414-2.414A1 1 0 0015.586 6H7a2 2 0 00-2 2v11a2 2 0 002 2z" />
+                        </svg>
+                        Files: {task.requiredFileTypes.join(', ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  {!isConnected ? (
+                    <Button
+                      onClick={() => window.ethereum.request({ method: 'eth_requestAccounts' })}
+                      className="w-full bg-white text-black hover:bg-zinc-200"
+                    >
+                      Connect Wallet to Apply
+                    </Button>
+                  ) : !task.isActive && !task.isCompleted ? (
+                    <div className="text-center text-zinc-400">
+                      This task is no longer active.
+                    </div>
+                  ) : task.isCompleted && task.submittedFileCID ? (
+                    <div className="space-y-4">
+                      <div className="text-center text-zinc-300">
+                        Task completed. Submitted File:
+                      </div>
+                      <a 
+                        href={`https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${task.submittedFileCID}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center px-4 py-2 rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-colors duration-200 text-sm font-medium"
+                      >
+                        View Submitted File
+                      </a>
+                    </div>
+                  ) : task.worker === address ? (
+                    <div className="space-y-4">
+                      <div className="text-sm text-zinc-300">
+                        You are assigned to this task. Submit your work to claim the bounty!
+                      </div>
+                      {task.requiredFileTypes.length > 0 && (
+                        <div className="space-y-2">
+                          <label htmlFor={`file-upload-${index}`} className="block text-sm font-medium text-zinc-300">
+                            Upload Required File(s) ({task.requiredFileTypes.join(', ')})
+                          </label>
+                          <input
+                            id={`file-upload-${index}`}
+                            type="file"
+                            onChange={handleFileChange}
+                            className="block w-full text-sm text-zinc-400
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-full file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-white/10 file:text-white
+                              hover:file:bg-white/20
+                            "
+                          />
+                        </div>
+                      )}
+                      <Button
+                        onClick={() => handleSubmitCompletion(index, task)}
+                        disabled={isSubmittingFile && submittingFileTaskId === index || isTransactionPending || !selectedFile}
+                        className={`w-full ${
+                          (isSubmittingFile && submittingFileTaskId === index) || isTransactionPending || !selectedFile
+                            ? 'bg-white/10 text-zinc-400'
+                            : 'bg-white text-black hover:bg-zinc-200'
+                        }`}
+                      >
+                        {isSubmittingFile && submittingFileTaskId === index ? 'Submitting...' : 'Submit Work & Claim Bounty'}
+                      </Button>
+                    </div>
+                  ) : task.creator === address ? (
+                    <div className="text-center text-zinc-300">
+                      You created this task.
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => handleApply(index)}
+                      disabled={isApplying && applyingTaskId === index || isTransactionPending}
+                      className={`w-full ${
+                        (isApplying && applyingTaskId === index) || isTransactionPending
+                          ? 'bg-white/10 text-zinc-400'
+                          : 'bg-white text-black hover:bg-zinc-200'
+                      }`}
+                    >
+                      {isApplying && applyingTaskId === index ? 'Applying...' : 'Apply for Task'}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
+            </CarouselItem>
           ))}
+        </CarouselContent>
+        <div className="flex items-center justify-between absolute -bottom-12 left-0 right-0">
+          <CarouselPrevious className="static bg-zinc-900 text-white hover:bg-zinc-800 border-zinc-800" />
+          <CarouselNext className="static bg-zinc-900 text-white hover:bg-zinc-800 border-zinc-800" />
         </div>
-      )}
+      </Carousel>
     </div>
   );
 } 
