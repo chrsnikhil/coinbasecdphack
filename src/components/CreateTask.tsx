@@ -1,85 +1,108 @@
 'use client';
 
-import { useState } from 'react';
-import { Transaction, TransactionButton, TransactionStatus } from '@coinbase/onchainkit/transaction';
-import { contractConfig } from '@/config/contractConfig';
+import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
 import { parseEther } from 'viem';
-import { useQueryClient } from '@tanstack/react-query';
-import React from 'react';
+import { useState } from 'react';
 
 export function CreateTask() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [bounty, setBounty] = useState('0.00000001');
+  const [bounty, setBounty] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  const queryClient = useQueryClient();
+  const { data: hash, writeContract, isPending } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    try {
+      const bountyAmount = parseFloat(bounty);
+      if (isNaN(bountyAmount) || bountyAmount <= 0) {
+        setError('Bounty must be greater than 0');
+        return;
+      }
+
+      writeContract({
+        address: contractConfig.address,
+        abi: FREELANCE_PLATFORM_ABI,
+        functionName: 'createTask',
+        args: [title, description],
+        value: parseEther(bounty),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    }
+  };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6">Create New Task</h2>
-      
-      <div className="space-y-4">
+    <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+      <h2 className="text-2xl font-bold mb-6 text-gray-900">Create New Task</h2>
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Title</label>
+          <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
+            Title
+          </label>
           <input
             type="text"
+            id="title"
             value={title}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-[#0052FF] focus:ring-2 focus:ring-[#0052FF]/20 outline-none transition-all"
+            required
           />
         </div>
-
         <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
+          <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+            Description
+          </label>
           <textarea
+            id="description"
             value={description}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-[#0052FF] focus:ring-2 focus:ring-[#0052FF]/20 outline-none transition-all"
             rows={4}
+            required
           />
         </div>
-
         <div>
-          <label className="block text-sm font-medium text-gray-700">Bounty (ETH)</label>
+          <label htmlFor="bounty" className="block text-sm font-medium text-gray-700 mb-1">
+            Bounty (ETH)
+          </label>
           <input
             type="number"
+            id="bounty"
             value={bounty}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBounty(e.target.value)}
-            step="0.00000001"
-            min="0.00000001"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            onChange={(e) => setBounty(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-[#0052FF] focus:ring-2 focus:ring-[#0052FF]/20 outline-none transition-all"
+            step="0.0001"
+            min="0.0001"
+            required
           />
+          <p className="mt-2 text-sm text-gray-500">Minimum bounty: 0.0001 ETH</p>
         </div>
-
-        <Transaction
-          calls={[
-            {
-              address: contractConfig.address,
-              abi: contractConfig.abi,
-              functionName: 'createTask',
-              args: [title, description],
-              value: parseEther(bounty),
-            },
-          ]}
-          onStatus={(status) => {
-            if (status.statusName === 'success') {
-              setTitle('');
-              setDescription('');
-              setBounty('0.00000001');
-              queryClient.invalidateQueries({ queryKey: ['taskCount'] });
-              queryClient.invalidateQueries({ queryKey: ['tasks'] });
-            }
-          }}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={isPending || isConfirming}
+          className="w-full bg-[#0052FF] text-white px-6 py-3 rounded-lg hover:bg-[#0043CC] disabled:bg-gray-300 disabled:cursor-not-allowed font-medium shadow-lg transition-all"
         >
-          <TransactionButton
-            className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors"
-            disabled={!title || !description}
-          >
-            Create Task
-          </TransactionButton>
-          <TransactionStatus />
-        </Transaction>
-      </div>
+          {isPending ? 'Creating...' : isConfirming ? 'Confirming...' : 'Create Task'}
+        </button>
+        {isSuccess && (
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-sm text-green-600">Task created successfully!</p>
+          </div>
+        )}
+      </form>
     </div>
   );
 } 

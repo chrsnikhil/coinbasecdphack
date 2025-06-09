@@ -21,7 +21,7 @@ export default function Home() {
           <CreateTask />
           <TaskList />
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
   );
 }

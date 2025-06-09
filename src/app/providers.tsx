@@ -13,6 +13,8 @@ const config = createConfig({
   connectors: [
     coinbaseWallet({
       appName: 'Freelance Platform',
+      appLogoUrl: 'https://example.com/logo.png',
+      darkMode: false,
     }),
   ],
   transports: {
@@ -22,7 +24,15 @@ const config = createConfig({
 });
 
 export function Providers({ children, cookie }: { children: ReactNode; cookie?: string | null }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 3,
+        retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+      },
+    },
+  }));
+  
   const initialState = cookieToInitialState(config, cookie);
 
   return (
@@ -31,14 +41,10 @@ export function Providers({ children, cookie }: { children: ReactNode; cookie?: 
         <OnchainKitProvider
           apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
           chain={baseSepolia}
-          rpcUrl={baseSepolia.rpcUrls.default.http[0]}
-          children={children}
-          config={{
-            wallet: {
-              display: 'modal',
-            },
-          }}
-        />
+          rpcUrl="https://sepolia.base.org"
+        >
+          {children}
+        </OnchainKitProvider>
       </QueryClientProvider>
     </WagmiConfig>
   );

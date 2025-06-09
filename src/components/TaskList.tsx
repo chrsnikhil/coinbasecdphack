@@ -1,6 +1,6 @@
 'use client';
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts, useAccount } from 'wagmi';
 import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
 import { formatEther } from 'viem';
 import React, { useEffect, useState } from 'react';
@@ -16,6 +16,7 @@ interface Task {
 }
 
 export function TaskList() {
+  const { address } = useAccount();
   const { data: taskCountBigInt, refetch: refetchTaskCount, isError: isTaskCountError } = useReadContract({
     address: contractConfig.address,
     abi: FREELANCE_PLATFORM_ABI,
@@ -109,50 +110,57 @@ export function TaskList() {
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-lg">
-      <h2 className="text-2xl font-semibold mb-4">Available Tasks</h2>
+    <div className="space-y-4">
+      <div className="bg-white p-4 rounded-lg shadow">
+        <h3 className="text-lg font-medium text-gray-900">Your Wallet Address</h3>
+        <p className="text-sm text-gray-500 break-all">{address || 'Not connected'}</p>
+      </div>
+
+      <h2 className="text-2xl font-bold mb-4">Available Tasks</h2>
       {tasks.length === 0 ? (
-        <p className="text-gray-600">No tasks available at the moment.</p>
+        <p className="text-gray-500">No tasks available.</p>
       ) : (
         <div className="space-y-4">
           {tasks.map((task, index) => (
-            <div key={index} className="border p-4 rounded-md">
-              <h3 className="text-xl font-semibold">{task.title}</h3>
-              <p className="text-gray-700">{task.description}</p>
-              <p className="text-sm text-gray-500">
-                Bounty: {formatEther(task.bounty)} ETH
-              </p>
-              <p className="text-sm text-gray-500">Creator: {task.creator}</p>
-              <p className="text-sm text-gray-500">
-                Worker: {task.worker === '0x0000000000000000000000000000000000000000' ? 'N/A' : task.worker}
-              </p>
-              <p className="text-sm text-gray-500">
-                Status: {task.isCompleted ? 'Completed' : task.isActive ? 'Active' : 'Inactive'}
-              </p>
-              {!task.isCompleted && task.isActive && task.worker === '0x0000000000000000000000000000000000000000' && (
-                <button
-                  onClick={() => handleAcceptTask(index)}
-                  disabled={isAccepting}
-                  className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-                >
-                  {isAccepting ? 'Accepting...' : 'Accept Task'}
-                </button>
-              )}
-              {!task.isCompleted && task.isActive && task.worker !== '0x0000000000000000000000000000000000000000' && (
-                <button
-                  onClick={() => handleCompleteTask(index)}
-                  disabled={isCompleting}
-                  className="mt-2 px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50"
-                >
-                  {isCompleting ? 'Completing...' : 'Complete Task'}
-                </button>
-              )}
+            <div key={index} className="bg-white p-4 rounded-lg shadow">
+              <h3 className="text-lg font-medium text-gray-900">{task.title}</h3>
+              <p className="text-gray-600 mt-2">{task.description}</p>
+              <div className="mt-4 space-y-2">
+                <p className="text-sm text-gray-500">
+                  <span className="font-medium">Bounty:</span> {formatEther(task.bounty)} ETH
+                </p>
+                <p className="text-sm text-gray-500">
+                  <span className="font-medium">Creator:</span> {task.creator}
+                </p>
+                <p className="text-sm text-gray-500">
+                  <span className="font-medium">Worker:</span> {task.worker === '0x0000000000000000000000000000000000000000' ? 'N/A' : task.worker}
+                </p>
+                <p className="text-sm text-gray-500">
+                  <span className="font-medium">Status:</span>{' '}
+                  {task.isCompleted ? 'Completed' : task.isActive ? 'Active' : 'Inactive'}
+                </p>
+                {task.isActive && !task.isCompleted && task.worker === '0x0000000000000000000000000000000000000000' && (
+                  <button
+                    onClick={() => handleAcceptTask(index)}
+                    disabled={isAccepting}
+                    className="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-300"
+                  >
+                    {isAccepting ? 'Accepting...' : 'Accept Task'}
+                  </button>
+                )}
+                {task.isActive && !task.isCompleted && task.worker === address && (
+                  <button
+                    onClick={() => handleCompleteTask(index)}
+                    disabled={isCompleting}
+                    className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-300"
+                  >
+                    {isCompleting ? 'Completing...' : 'Complete Task'}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
-      )}
-      {(isAccepted || isCompletedTx) && (
-        <p className="text-sm text-green-600 mt-2">Transaction successful!</p>
       )}
     </div>
   );
