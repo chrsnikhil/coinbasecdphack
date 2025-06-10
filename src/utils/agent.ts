@@ -32,4 +32,46 @@ export async function checkAgentStatus() {
     console.error('Error checking agent status:', error);
     throw error;
   }
+}
+
+export async function processX402Payment(paymentData: {
+  action: string;
+  amount: string;
+  recipient: string;
+  description?: string;
+  taskId?: number;
+}) {
+  try {
+    const response = await fetch('/api/x402', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(paymentData),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to process X402 payment');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error processing X402 payment:', error);
+    throw error;
+  }
+}
+
+export async function getX402Status() {
+  try {
+    const response = await fetch('/api/x402');
+    if (!response.ok) {
+      throw new Error('Failed to check X402 status');
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error checking X402 status:', error);
+    throw error;
+  }
 } 

@@ -2,6 +2,8 @@ import axios from 'axios';
 import { PromptTemplate } from "@langchain/core/prompts";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
+import { getPaymentService } from './paymentService';
+import { X402PaymentHandler } from './x402PaymentHandler';
 
 const reviewSchema = z.object({
   quality: z.number().min(1).max(10).describe("Quality score from 1-10"),
@@ -39,12 +41,14 @@ export async function reviewTaskSubmission({
   fileType,
   ipfsHash,
   content,
+  payToAddress,
 }: {
   taskDescription: string;
   fileName: string;
   fileType: string;
   ipfsHash: string;
   content: string;
+  payToAddress?: string;
 }) {
   try {
     console.log('Initializing Akash API client...');
@@ -82,9 +86,36 @@ export async function reviewTaskSubmission({
     const result = await parser.parse(response.data.choices[0].message.content);
 
     console.log('Review completed successfully');
+    
+    // Process x402 payment if address is provided and review was successful
+    let paymentResult = null;
+    if (payToAddress && result.recommendation === 'APPROVE') {
+      console.log('Processing x402 payment for successful review...');
+      try {
+        const paymentService = getPaymentService();
+        const x402Handler = new X402PaymentHandler(paymentService);
+        
+        paymentResult = await x402Handler.createPayment({
+          amount: '0.001', // 0.001 ETH reward for review
+          recipient: payToAddress,
+          description: `AI Agent reward for task review (${fileName})`
+        });
+        
+        console.log('X402 payment completed:', paymentResult);
+      } catch (paymentError) {
+        console.error('Payment failed but review completed:', paymentError);
+        // Don't fail the entire review if payment fails
+        paymentResult = {
+          success: false,
+          error: paymentError instanceof Error ? paymentError.message : 'Payment failed'
+        };
+      }
+    }
+    
     return {
       success: true,
       review: result,
+      payment: paymentResult,
     };
   } catch (error) {
     console.error("Error in AI review:", error);
@@ -93,4 +124,4 @@ export async function reviewTaskSubmission({
       error: error instanceof Error ? error.message : "Failed to review submission",
     };
   }
-} 
+}

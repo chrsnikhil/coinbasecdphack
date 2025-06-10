@@ -3,6 +3,8 @@ import axios from 'axios';
 import PDFParser from 'pdf2json';
 import { publicClient } from '@/utils/viem';
 import { contractConfig } from '@/config/contractConfig';
+import { getPaymentService } from '@/utils/paymentService';
+import { X402PaymentHandler } from '@/utils/x402PaymentHandler';
 
 // Validate Akash API key
 function validateAkashKey() {
@@ -186,12 +188,30 @@ Please review if the submitted work meets the requirements specified in the task
     }
     console.log('Parsed review data:', JSON.stringify(reviewData, null, 2));
 
+    // Process x402 payment after successful review
+    let paymentResult = null;
+    if (reviewData.approved) {
+      try {
+        console.log('Review approved, processing x402 payment...');
+        const paymentService = getPaymentService();
+        const x402Handler = new X402PaymentHandler(paymentService);
+        
+        // Pay the account that submitted the task (as proof of concept)
+        paymentResult = await x402Handler.payForTaskReview(taskId, account);
+        console.log('X402 payment result:', paymentResult);
+      } catch (paymentError) {
+        console.error('X402 payment failed but review completed:', paymentError);
+        // Don't fail the review if payment fails
+      }
+    }
+
     return NextResponse.json({
       approved: reviewData.approved,
       feedback: reviewData.feedback,
       taskId,
       ipfsHash,
-      account
+      account,
+      payment: paymentResult
     });
   } catch (error) {
     console.error('Review error:', error);

@@ -4,8 +4,8 @@ import axios from 'axios';
 
 // Validate Pinata API keys
 function validatePinataKeys() {
-  const apiKey = process.env.PINATA_API_KEY;
-  const secretKey = process.env.PINATA_SECRET_KEY;
+  const apiKey = process.env.NEXT_PUBLIC_PINATA_API_KEY;
+  const secretKey = process.env.NEXT_PUBLIC_PINATA_SECRET_API_KEY;
 
   if (!apiKey || !secretKey) {
     throw new Error('Pinata API keys are not configured. Please check your environment variables.');

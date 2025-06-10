@@ -1,14 +1,18 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { AgentConfig, initializeModel } from './config';
+import { getPaymentService } from '../utils/paymentService';
+import { X402PaymentHandler } from '../utils/x402PaymentHandler';
 
 export class TaskAgent {
   private model: ChatOpenAI;
   private config: AgentConfig;
+  private paymentHandler: X402PaymentHandler;
 
   constructor(config: AgentConfig) {
     this.config = config;
     this.model = initializeModel(config);
+    this.paymentHandler = new X402PaymentHandler(getPaymentService());
   }
 
   async reviewTaskSubmission(taskId: number, submission: {
@@ -19,7 +23,7 @@ export class TaskAgent {
       fileType: string;
       ipfsHash: string;
     };
-  }) {
+  }, payToAddress?: string) {
     try {
       console.log('Starting task review...');
       console.log('Task ID:', taskId);
@@ -27,6 +31,10 @@ export class TaskAgent {
       console.log('File Name:', submission.submission.fileName);
       console.log('File Type:', submission.submission.fileType);
       console.log('IPFS Hash:', submission.submission.ipfsHash);
+      
+      if (payToAddress) {
+        console.log('Payment address provided:', payToAddress);
+      }
 
       // Create the review prompt
       const reviewPrompt = PromptTemplate.fromTemplate(`
@@ -46,32 +54,32 @@ export class TaskAgent {
         6. Overall Assessment
 
         Format your response as a JSON object with the following structure:
-        {
-          "codeQuality": {
+        {{
+          "codeQuality": {{
             "score": number,
             "feedback": string
-          },
-          "functionality": {
+          }},
+          "functionality": {{
             "score": number,
             "feedback": string
-          },
-          "bestPractices": {
+          }},
+          "bestPractices": {{
             "score": number,
             "feedback": string
-          },
-          "security": {
+          }},
+          "security": {{
             "score": number,
             "feedback": string
-          },
-          "performance": {
+          }},
+          "performance": {{
             "score": number,
             "feedback": string
-          },
-          "overallAssessment": {
+          }},
+          "overallAssessment": {{
             "score": number,
             "feedback": string
-          }
-        }
+          }}
+        }}
       `);
 
       // Format the prompt
@@ -96,12 +104,53 @@ export class TaskAgent {
         };
       }
 
+      // Process payment if address is provided and review was successful
+      let paymentResult = null;
+      if (payToAddress && !review.error) {
+        console.log('Processing x402 payment for task review...');
+        try {
+          paymentResult = await this.paymentHandler.payForTaskReview(taskId, payToAddress);
+          console.log('Payment result:', paymentResult);
+        } catch (paymentError) {
+          console.error('Payment failed but review completed:', paymentError);
+          // Don't fail the entire review if payment fails
+        }
+      }
+
       return {
-        review
+        review,
+        payment: paymentResult
       };
     } catch (error) {
       console.error('Error in reviewTaskSubmission:', error);
       throw new Error(`Failed to review task: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
-} 
+
+  /**
+   * Process a payment using the x402 payment handler
+   */
+  async processPayment(taskId: number, amount: string, recipient: string): Promise<{
+    success: boolean;
+    transactionHash?: string;
+    error?: string;
+  }> {
+    try {
+      console.log(`Processing payment for task ${taskId}: ${amount} ETH to ${recipient}`);
+      
+      const result = await this.paymentHandler.createPayment({
+        amount,
+        recipient,
+        description: `Manual payment for task #${taskId}`
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Payment processing failed'
+      };
+    }
+  }
+}

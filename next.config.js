@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const webpack = require('webpack');
+
 const nextConfig = {
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -21,7 +23,7 @@ const nextConfig = {
 
       // Add Buffer polyfill
       config.plugins.push(
-        new config.webpack.ProvidePlugin({
+        new webpack.ProvidePlugin({
           Buffer: ['buffer', 'Buffer'],
           process: 'process/browser',
         })

@@ -7,6 +7,7 @@ import { contractConfig } from '@/config/contractConfig';
 import { useState, useEffect } from 'react';
 import { WalletConnect } from '@/components/WalletConnect';
 import { AgentTest } from '@/components/AgentTest';
+import { X402PaymentDemo } from '@/components/X402PaymentDemo';
 
 interface Task {
   id: number;
@@ -74,6 +75,11 @@ export default function Home() {
         {/* Add Agent Test Panel */}
         <div className="mb-8">
           <AgentTest />
+        </div>
+
+        {/* Add X402 Payment Demo */}
+        <div className="mb-8">
+          <X402PaymentDemo />
         </div>
 
         <div className="flex justify-between items-center mb-8">

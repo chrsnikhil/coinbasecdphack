@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTaskAgent } from '../agent/useTaskAgent';
 import { Button } from './ui/button';
+import { processX402Payment } from '@/utils/agent';
 import { toast } from 'sonner';
 
 export function AgentTest() {
