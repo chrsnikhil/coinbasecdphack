@@ -6,8 +6,10 @@ import { useReadContract, useReadContracts, useConnect, useAccount } from 'wagmi
 import { contractConfig } from '@/config/contractConfig';
 import { useState, useEffect } from 'react';
 import { WalletConnect } from '@/components/WalletConnect';
+import { AgentTest } from '@/components/AgentTest';
 
 interface Task {
+  id: number;
   creator: string;
   title: string;
   description: string;
@@ -42,7 +44,8 @@ export default function Home() {
 
   useEffect(() => {
     if (tasksData) {
-      const formattedTasks = tasksData.map((task: any) => ({
+      const formattedTasks = tasksData.map((task: any, index) => ({
+        id: taskIds[index],
         creator: task.result[0],
         title: task.result[1],
         description: task.result[2],
@@ -64,10 +67,16 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8">
+    <main className="min-h-screen bg-zinc-900 text-white">
+      <div className="container mx-auto py-8">
+        <h1 className="text-3xl font-bold mb-8">Freelance Platform</h1>
+        
+        {/* Add Agent Test Panel */}
+        <div className="mb-8">
+          <AgentTest />
+        </div>
+
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-foreground">Freelance Platform</h1>
           <WalletConnect />
         </div>
 

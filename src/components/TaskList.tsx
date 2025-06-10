@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import toast, { Toaster } from 'react-hot-toast';
 
 interface Task {
+  id: number;
   title: string;
   description: string;
   bounty: bigint;
@@ -166,11 +167,6 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
         const uploadResponse = await fetch(url, {
           method: 'POST',
           body: formData,
-          // When using FormData, the browser automatically sets the Content-Type header with the correct boundary
-          // So, we don't need to set it manually here.
-          // headers: {
-          //   'Content-Type': selectedFile.type,
-          // },
         });
 
         if (!uploadResponse.ok) {
@@ -195,6 +191,57 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
         setIsSubmittingFile(false);
         setSubmittingFileTaskId(null);
         toast.error(`File upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`, { id: toastId, duration: 3000 });
+        setCurrentToastId(undefined);
+        return;
+      }
+
+      // AI Review Step
+      const reviewToastId = toast.loading('AI is reviewing your submission...');
+      setCurrentToastId(reviewToastId);
+
+      try {
+        const reviewResponse = await fetch('/api/agent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'reviewTask',
+            params: {
+              taskId,
+              taskDescription: task.description,
+              submissionData: {
+                ipfsHash,
+                fileName: selectedFile.name,
+                fileType: selectedFile.type,
+              }
+            }
+          })
+        });
+
+        if (!reviewResponse.ok) {
+          throw new Error('Failed to get AI review');
+        }
+
+        const reviewResult = await reviewResponse.json();
+        console.log('AI Review Result:', reviewResult);
+
+        // Check if the review recommends approval
+        if (!reviewResult.result.includes('RECOMMENDATION: APPROVE')) {
+          toast.error('Submission rejected by AI review', { id: reviewToastId, duration: 5000 });
+          setCurrentToastId(undefined);
+          setIsSubmittingFile(false);
+          setSubmittingFileTaskId(null);
+          return;
+        }
+
+        toast.success('AI review passed!', { id: reviewToastId, duration: 2000 });
+      } catch (reviewError) {
+        console.error('Review error:', reviewError);
+        setError(reviewError instanceof Error ? reviewError.message : 'Failed to get AI review');
+        setIsSubmittingFile(false);
+        setSubmittingFileTaskId(null);
+        toast.error(`AI review failed: ${reviewError instanceof Error ? reviewError.message : 'Unknown error'}`, { id: reviewToastId, duration: 3000 });
         setCurrentToastId(undefined);
         return;
       }
@@ -334,11 +381,11 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
                     >
                       Connect Wallet to Apply
                     </Button>
-                  ) : !task.isActive && !task.isCompleted ? (
+                  ) : !task.isActive ? (
                     <div className="text-center text-zinc-400">
                       This task is no longer active.
                     </div>
-                  ) : task.isCompleted && task.submittedFileCID ? (
+                  ) : task.isCompleted ? (
                     <div className="space-y-4">
                       <div className="text-center text-zinc-300">
                         Task completed. Submitted File:
@@ -354,56 +401,36 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
                     </div>
                   ) : task.worker === address ? (
                     <div className="space-y-4">
-                      <div className="text-sm text-zinc-300">
-                        You are assigned to this task. Submit your work to claim the bounty!
+                      <div className="text-center text-zinc-300">
+                        You are the assigned worker for this task.
                       </div>
-                      {task.requiredFileTypes.length > 0 && (
-                        <div className="space-y-2">
-                          <label htmlFor={`file-upload-${index}`} className="block text-sm font-medium text-zinc-300">
-                            Upload Required File(s) ({task.requiredFileTypes.join(', ')})
-                          </label>
-                          <input
-                            id={`file-upload-${index}`}
-                            type="file"
-                            onChange={handleFileChange}
-                            className="block w-full text-sm text-zinc-400
-                              file:mr-4 file:py-2 file:px-4
-                              file:rounded-full file:border-0
-                              file:text-sm file:font-semibold
-                              file:bg-white/10 file:text-white
-                              hover:file:bg-white/20
-                            "
-                          />
-                        </div>
-                      )}
-                      <Button
-                        onClick={() => handleSubmitCompletion(index, task)}
-                        disabled={isSubmittingFile && submittingFileTaskId === index || isTransactionPending || !selectedFile}
-                        className={`w-full ${
-                          (isSubmittingFile && submittingFileTaskId === index) || isTransactionPending || !selectedFile
-                            ? 'bg-white/10 text-zinc-400'
-                            : 'bg-white text-black hover:bg-zinc-200'
-                        }`}
-                      >
-                        {isSubmittingFile && submittingFileTaskId === index ? 'Submitting...' : 'Submit Work & Claim Bounty'}
-                      </Button>
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          onChange={handleFileChange}
+                          className="w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-zinc-800 file:text-white hover:file:bg-zinc-700"
+                        />
+                        <Button
+                          onClick={() => handleSubmitCompletion(task.id, task)}
+                          disabled={!selectedFile || isSubmittingFile}
+                          className="w-full bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isSubmittingFile && submittingFileTaskId === task.id ? 'Submitting...' : 'Submit Completion'}
+                        </Button>
+                      </div>
                     </div>
-                  ) : task.creator === address ? (
-                    <div className="text-center text-zinc-300">
-                      You created this task.
-                    </div>
-                  ) : (
+                  ) : task.worker === '0x0000000000000000000000000000000000000000' ? (
                     <Button
-                      onClick={() => handleApply(index)}
-                      disabled={isApplying && applyingTaskId === index || isTransactionPending}
-                      className={`w-full ${
-                        (isApplying && applyingTaskId === index) || isTransactionPending
-                          ? 'bg-white/10 text-zinc-400'
-                          : 'bg-white text-black hover:bg-zinc-200'
-                      }`}
+                      onClick={() => handleApply(task.id)}
+                      disabled={isApplying && applyingTaskId === task.id}
+                      className="w-full bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isApplying && applyingTaskId === index ? 'Applying...' : 'Apply for Task'}
+                      {isApplying && applyingTaskId === task.id ? 'Applying...' : 'Apply for Task'}
                     </Button>
+                  ) : (
+                    <div className="text-center text-zinc-400">
+                      This task has been assigned to another worker.
+                    </div>
                   )}
                 </div>
               </div>
