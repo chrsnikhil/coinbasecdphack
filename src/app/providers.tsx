@@ -8,20 +8,19 @@ import { coinbaseWallet } from 'wagmi/connectors';
 import { metaMask } from 'wagmi/connectors';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
-import { wagmiConfig } from '@/config/wagmiConfig';
+import { config } from '@/config/wagmiConfig';
 
 export function Providers({ children, initialState }: { children: ReactNode; initialState: any }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
-        retry: 3,
-        retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+        staleTime: 60 * 1000,
       },
     },
   }));
   
   return (
-    <WagmiConfig config={wagmiConfig} initialState={initialState}>
+    <WagmiConfig config={config} initialState={initialState}>
       <QueryClientProvider client={queryClient}>
         <OnchainKitProvider
           apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}

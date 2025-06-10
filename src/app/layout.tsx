@@ -4,11 +4,12 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { WagmiConfig, cookieToInitialState } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { wagmiConfig } from '@/config/wagmiConfig';
+import { config } from '@/config/wagmiConfig';
 import { OnchainKitProvider } from '@coinbase/onchainkit';
 import { baseSepolia } from 'wagmi/chains';
 import { Providers } from './providers';
 import { headers } from 'next/headers';
+import { Toaster } from 'react-hot-toast';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -24,13 +25,14 @@ export default async function RootLayout({
 }>) {
   const headersList = await headers();
   const cookie = headersList.get('cookie');
-  const initialState = cookieToInitialState(wagmiConfig, cookie);
+  const initialState = cookieToInitialState(config, cookie);
 
   return (
     <html lang="en">
       <body className={inter.className}>
         <Providers initialState={initialState}>
-          {children}
+        {children}
+          <Toaster position="top-right" />
         </Providers>
       </body>
     </html>

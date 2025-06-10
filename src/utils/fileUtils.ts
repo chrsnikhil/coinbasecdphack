@@ -7,7 +7,7 @@ export async function fetchFileContent(ipfsHash: string, fileName: string): Prom
     
     // Fetch the file from IPFS
     const response = await axios.get(
-      `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`,
+      `https://pink-fantastic-cod-307.mypinata.cloud/ipfs/${ipfsHash}`,
       { 
         responseType: 'arraybuffer',
         timeout: 10000 // 10 second timeout

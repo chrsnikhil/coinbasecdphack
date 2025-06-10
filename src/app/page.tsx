@@ -84,7 +84,7 @@ export default function Home() {
           <CreateTask onTaskCreated={refetchTasks} />
           <TaskList tasks={tasks} refetchTasks={refetchTasks} />
         </section>
-      </div>
-    </main>
+        </div>
+      </main>
   );
 }
