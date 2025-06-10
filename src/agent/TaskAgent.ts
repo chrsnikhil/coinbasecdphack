@@ -1,7 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { AgentConfig, initializeModel } from './config';
-import type { AgentKit, CdpV2WalletProvider, WalletProvider } from '@coinbase/agentkit';
+import type { AgentKit, CdpWalletProvider, WalletProvider } from '@coinbase/agentkit';
 
 export class TaskAgent {
   private model: ChatOpenAI;
@@ -29,6 +29,18 @@ export class TaskAgent {
         return;
       }
 
+      // Temporarily disable CDP initialization due to Twitter dependency issue
+      console.warn('CDP wallet initialization is temporarily disabled due to Twitter dependency conflicts.');
+      console.warn('AI review functionality will work, but payment processing will be unavailable.');
+      
+      // Set everything to null for now
+      this.agentKit = null;
+      this.walletProvider = null;
+      
+      return;
+
+      // TODO: Re-enable this once the Twitter dependency issue is resolved
+      /*
       const cdpWalletConfig = {
         apiKeyId: this.config.cdpApiKeyId,
         apiKeySecret: this.config.cdpApiKeySecret,
@@ -38,19 +50,30 @@ export class TaskAgent {
 
       try {
         console.log('Attempting to import CDP wallet provider...');
-        // Import the entire module first
-        const agentkit = await import('@coinbase/agentkit');
-        console.log('AgentKit module imported successfully');
+        // Set environment variables to disable Twitter functionality before importing
+        const originalTwitter = process.env.TWITTER_API_KEY;
+        process.env.TWITTER_API_KEY = '';
+        
+        // Import only the specific components we need
+        const { CdpWalletProvider, AgentKit } = await import('@coinbase/agentkit');
+        console.log('AgentKit components imported successfully');
+        
+        // Restore original environment
+        if (originalTwitter) {
+          process.env.TWITTER_API_KEY = originalTwitter;
+        } else {
+          delete process.env.TWITTER_API_KEY;
+        }
         
         // Initialize the CDP wallet provider
         console.log('Configuring CDP wallet provider...');
-        this.walletProvider = await agentkit.CdpV2WalletProvider.configureWithWallet(cdpWalletConfig);
+        this.walletProvider = await CdpWalletProvider.configureWithWallet(cdpWalletConfig);
         console.log('CDP wallet provider configured successfully');
 
         // Initialize AgentKit with the wallet provider
         console.log('Initializing AgentKit...');
-        this.agentKit = await agentkit.AgentKit.from({
-          walletProvider: this.walletProvider,
+        this.agentKit = await AgentKit.from({
+          walletProvider: this.walletProvider || undefined,
         });
 
         console.log('AgentKit initialized successfully');
@@ -60,6 +83,7 @@ export class TaskAgent {
         this.agentKit = null;
         this.walletProvider = null;
       }
+      */
     } catch (error) {
       console.error('Failed to initialize AgentKit:', error);
       this.agentKit = null;
@@ -179,20 +203,19 @@ export class TaskAgent {
   }
 
   async processPayment(taskId: string, amount: string, recipient: string) {
-    if (!this.agentKit || !this.walletProvider) {
-      throw new Error('CDP features are not available. Please check your configuration.');
+    if (!this.walletProvider) {
+      throw new Error('CDP wallet features are not available. Please check your configuration.');
     }
 
     try {
-      // Use the wallet provider to send the transaction
-      const tx = await this.walletProvider.sendTransaction({
-        to: recipient,
-        value: amount,
-        network: this.config.networkId
+      // Use the wallet provider's nativeTransfer method for ETH transfers
+      const transfer = await (this.walletProvider as any).nativeTransfer({
+        amount: amount,
+        destination: recipient,
       });
 
       return {
-        transactionHash: tx.hash,
+        transactionHash: transfer.getTransactionHash(),
         status: 'pending'
       };
     } catch (error) {
@@ -208,12 +231,13 @@ export class TaskAgent {
     }
 
     try {
-      // Use Coinbase Agent for task monitoring
-      const status = await this.agentKit?.getTaskStatus({
-        taskId: taskId
-      });
-
-      return status;
+      // For now, return a placeholder status since this method doesn't exist in AgentKit
+      // In a real implementation, this would query blockchain or database for task status
+      return {
+        taskId: taskId,
+        status: 'unknown',
+        message: 'Task status monitoring not yet implemented'
+      };
     } catch (error) {
       console.error('Task monitoring error:', error);
       throw error;
@@ -227,13 +251,14 @@ export class TaskAgent {
     }
 
     try {
-      // Use Coinbase Agent for dispute resolution
-      const result = await this.agentKit?.resolveDispute({
+      // For now, return a placeholder resolution since this method doesn't exist in AgentKit
+      // In a real implementation, this would handle dispute resolution logic
+      return {
         taskId: taskId,
-        resolution: resolution
-      });
-
-      return result;
+        resolution: resolution,
+        status: 'resolved',
+        message: 'Dispute resolution not yet implemented'
+      };
     } catch (error) {
       console.error('Dispute resolution error:', error);
       throw error;
