@@ -86,7 +86,7 @@ export default function AllTasksPopup({
       onClick={onClose}
     >
       <motion.div
-        className="bg-black/80 border border-white/20 rounded-3xl p-8 max-w-4xl w-full h-[90vh] text-white/90 relative shadow-2xl flex flex-col"
+        className="bg-black/80 border border-white/20 rounded-3xl p-8 max-w-5xl w-full h-[90vh] text-white/90 relative shadow-2xl flex flex-col"
         variants={popupVariants}
         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside popup
       >
@@ -112,7 +112,7 @@ export default function AllTasksPopup({
               <p>No tasks available at the moment. Create one!</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-8 p-1">
+            <div className="grid grid-cols-3 gap-8 p-1">
               {tasks.map((task) => (
                 <GlassCard key={task.id} className="flex flex-col justify-between p-8 w-full text-white/90 border border-white/10 rounded-3xl" hoverEffect={true}>
                   <div className="flex flex-col md:flex-row md:justify-between md:items-start md:space-x-8">

@@ -31,7 +31,6 @@ export function CreateTask() {
   const [requiredFileTypes, setRequiredFileTypes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [currentToastId, setCurrentToastId] = useState<string | undefined>(undefined);
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -40,17 +39,17 @@ export function CreateTask() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const { writeContract } = useWriteContract();
+  const { writeContract, data: writeContractData, error: writeError } = useWriteContract();
 
   const { isLoading: isTransactionPending, isSuccess: isTransactionSuccess } = useWaitForTransactionReceipt({
-    hash: pendingTxHash,
+    hash: writeContractData,
   });
 
   useEffect(() => {
-    console.log('useEffect triggered in CreateTask:', { isSubmitting, isTransactionPending, isTransactionSuccess, pendingTxHash, currentToastId });
+    console.log('useEffect triggered in CreateTask:', { isSubmitting, isTransactionPending, isTransactionSuccess, writeContractData, currentToastId });
 
     // Handle "Confirming transaction..." toast
-    if (pendingTxHash && isTransactionPending) {
+    if (writeContractData && isTransactionPending) {
       if (!currentToastId) {
         console.log('Showing Confirming transaction toast...');
         const id = toast.loading("Confirming transaction...", { duration: Infinity });
@@ -58,7 +57,7 @@ export function CreateTask() {
       }
     }
     // Handle success toast - This should be the highest priority if successful
-    else if (isTransactionSuccess && pendingTxHash) { // Ensure pendingTxHash is still around for context of this specific tx
+    else if (isTransactionSuccess && writeContractData) { // Ensure writeContractData is still around for context of this specific tx
       console.log('Transaction success path reached! Dismissing current toast and showing success toast.');
       if (currentToastId) toast.dismiss(currentToastId);
       toast.success('Task created successfully!');
@@ -67,26 +66,24 @@ export function CreateTask() {
       setTaskDescription('');
       setBounty('');
       setRequiredFileTypes('');
-      setPendingTxHash(undefined);
       setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
     }
     // Handle failure toast (transaction completed, but not successfully)
-    else if (!isTransactionPending && pendingTxHash && !isTransactionSuccess) {
+    else if (!isTransactionPending && writeContractData && !isTransactionSuccess) {
       console.log('Transaction failed path reached. Dismissing current toast and showing error toast.');
       if (currentToastId) toast.dismiss(currentToastId);
       toast.error('Task creation failed!');
-      setPendingTxHash(undefined);
       setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
     }
-    // If pendingTxHash becomes undefined (e.g., from an error in handleSubmit before setting hash),
+    // If writeContractData becomes undefined (e.g., from an error in handleSubmit before setting hash),
     // and there's a currentToastId, dismiss it.
-    else if (!pendingTxHash && currentToastId) {
+    else if (!writeContractData && currentToastId) {
       if (currentToastId) toast.dismiss(currentToastId);
       setCurrentToastId(undefined);
     }
-  }, [isTransactionPending, isTransactionSuccess, pendingTxHash, currentToastId]);
+  }, [isTransactionPending, isTransactionSuccess, writeContractData, currentToastId]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -133,24 +130,16 @@ export function CreateTask() {
       // });
 
       // console.log("Attempting to write contract..."); // Removed debug log
-      const txHash = await writeContract({
+      await writeContract({
         ...contractConfig,
         functionName: 'createTask',
         args: [taskName, taskDescription, parsedBounty, fileTypesArray],
         value: parsedBounty,
       });
 
-      // console.log("Result of writeContract:", txHash); // Removed debug log
-
-      if (typeof txHash === 'string') {
-        // console.log("Transaction hash received:", txHash); // Removed debug log
-        setPendingTxHash(txHash as `0x${string}`);
-      } else {
-        if (initialLoadingToastId) toast.dismiss(initialLoadingToastId);
-        toast.error("Post creation initiated. Please confirm in your wallet.");
-        setIsSubmitting(false);
-        setCurrentToastId(undefined);
-      }
+      // If writeContract succeeds without throwing, the transaction was initiated
+      // The transaction hash is now available in writeContractData from the hook
+      if (initialLoadingToastId) toast.dismiss(initialLoadingToastId);
 
     } catch (err: any) {
       // console.error("Error during contract write or initial checks:", err); // Modified error logging
@@ -168,7 +157,6 @@ export function CreateTask() {
       }
 
       setIsSubmitting(false); // Reset submitting state after error
-      setPendingTxHash(undefined); // Clear pending hash on error
       setCurrentToastId(undefined); // Clear toast ID on error
     }
   };
