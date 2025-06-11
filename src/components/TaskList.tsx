@@ -12,10 +12,10 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { Button } from "@/components/ui/button";
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { publicClient, walletClient } from "@/utils/viem";
 import GlassCard from '@/components/GlassCard';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Task {
@@ -279,8 +279,17 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
                 : 'hover:bg-white/25'
             }`}
           >
-            {loading || isTransactionPending ? 'Submitting...' : 'Submit Completion'}
-            <ArrowRight className="ml-3 w-5 h-5" />
+            {loading || isTransactionPending ? (
+              <div className="flex items-center justify-center space-x-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Processing...</span>
+              </div>
+            ) : (
+              <>
+                Submit Completion
+                <ArrowRight className="ml-3 w-5 h-5" />
+              </>
+            )}
           </Button>
         </div>
       );
@@ -304,28 +313,23 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
             : 'hover:bg-white/25'
         }`}
       >
-        {loading || isTransactionPending ? 'Accepting Task...' : 'Accept Task'}
-        <ArrowRight className="ml-3 w-5 h-5" />
+        {loading || isTransactionPending ? (
+          <div className="flex items-center justify-center space-x-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span>Processing...</span>
+          </div>
+        ) : (
+          <>
+            Accept Task
+            <ArrowRight className="ml-3 w-5 h-5" />
+          </>
+        )}
       </Button>
     );
   };
 
   return (
     <div className="w-full">
-      <Toaster position="top-left" toastOptions={{
-        style: {
-          background: '#000',
-          color: '#fff',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-        },
-        success: {
-          iconTheme: {
-            primary: '#10B981',
-            secondary: '#fff',
-          },
-        },
-      }} />
-      
       <Carousel
         opts={{
           align: "start",
@@ -477,6 +481,28 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
                   </Button>
                 </motion.div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Loading Overlay */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 flex flex-col items-center space-y-4"
+            >
+              <Loader2 className="w-8 h-8 text-white animate-spin" />
+              <p className="text-white/90 font-light">Processing your request...</p>
             </motion.div>
           </motion.div>
         )}

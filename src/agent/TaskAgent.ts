@@ -42,15 +42,19 @@ export class TaskAgent {
 
         Task Description: {taskDescription}
         
+        File Information:
+        - File Name: {fileName}
+        - File Type: {fileType}
+        
         Submission Content:
         {content}
 
-        Please provide a detailed review covering:
-        1. Code Quality and Structure
+        Based on the file type ({fileType}), provide a detailed review covering:
+        1. Quality and Structure (adapt based on file type - e.g., code quality for code files, design quality for images, etc.)
         2. Functionality and Requirements
-        3. Best Practices
-        4. Security Considerations
-        5. Performance
+        3. Best Practices (adapt based on file type)
+        4. Security Considerations (if applicable)
+        5. Performance (if applicable)
         6. Overall Assessment
 
         Format your response as a JSON object with the following structure. DO NOT include any comments or extraneous text within the JSON object. The response must be pure JSON.
@@ -81,11 +85,24 @@ export class TaskAgent {
           }},
           "overallStatus": "accepted" | "rejected"
         }}
+
+        For non-code files:
+        - For images: Focus on visual quality, composition, and adherence to design requirements
+        - For documents: Focus on content quality, formatting, and clarity
+        - For audio/video: Focus on quality, duration, and technical specifications
+        - For other file types: Adapt the review criteria appropriately
+
+        For code files:
+        - Focus on code quality, structure, and technical implementation
+        - Include security and performance considerations
+        - Evaluate against coding best practices
       `);
 
       // Format the prompt
       const formattedPrompt = await reviewPrompt.format({
         taskDescription: submission.taskDescription,
+        fileName: submission.submission.fileName,
+        fileType: submission.submission.fileType,
         content: submission.submission.content
       });
 

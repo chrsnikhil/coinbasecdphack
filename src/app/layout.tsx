@@ -9,7 +9,7 @@ import { OnchainKitProvider } from '@coinbase/onchainkit';
 import { baseSepolia } from 'wagmi/chains';
 import { Providers } from './providers';
 import { headers } from 'next/headers';
-import { Toaster } from 'react-hot-toast';
+import { ToastProvider } from '@/components/ui/toast';
 import GlassCursor from '@/components/GlassCursor';
 
 const inter = Inter({
@@ -37,7 +37,7 @@ export default async function RootLayout({
       <body className={`${inter.className} bg-black text-white`}>
         <Providers initialState={initialState}>
           {children}
-          <Toaster position="top-left" />
+          <ToastProvider />
         </Providers>
         <GlassCursor />
       </body>
