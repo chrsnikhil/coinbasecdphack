@@ -104,7 +104,7 @@ export default function AIReviewsPopup({ isOpen, onClose, onViewReview }: AIRevi
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[70] flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[75] flex items-center justify-center p-4"
         variants={backdropVariants}
         initial="hidden"
         animate="visible"

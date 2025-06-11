@@ -584,7 +584,7 @@ export default function Home() {
           <AnimatePresence>
             {showReviewPopup && currentReview && (
               <motion.div
-                className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[60] flex items-center justify-center p-4"
+                className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[85] flex items-center justify-center p-4"
                 variants={backdropVariants}
                 initial="hidden"
                 animate="visible"
@@ -702,6 +702,7 @@ export default function Home() {
             onViewReview={(review) => {
               setCurrentReview(review);
               setShowReviewPopup(true);
+              // Don't close the AI reviews popup - let it stay open in background
             }}
           />
         </div>
