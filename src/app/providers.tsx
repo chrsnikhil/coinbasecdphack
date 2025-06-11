@@ -25,7 +25,6 @@ export function Providers({ children, initialState }: { children: ReactNode; ini
         <OnchainKitProvider
           apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
           chain={baseSepolia}
-          rpcUrl="https://sepolia.base.org"
           config={{
             appearance: {
               name: 'CDP Fix',

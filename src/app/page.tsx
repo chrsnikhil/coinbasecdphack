@@ -1,5 +1,5 @@
 "use client";
-import { useAccount, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { publicClient } from '@/utils/viem';
 import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
@@ -15,6 +15,7 @@ import { ArrowRight, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlassCard from '@/components/GlassCard';
 import AllTasksPopup from '@/components/AllTasksPopup';
+import { baseSepolia } from 'wagmi/chains';
 
 interface Task {
   id: number;
@@ -43,8 +44,10 @@ type GetTaskResult = [
 ];
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain: connectedChain } = useAccount();
+  const currentChainId = useChainId();
   const { writeContract } = useWriteContract();
+  const { switchChain } = useSwitchChain();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +68,9 @@ export default function Home() {
   const fetchCount = useCallback(async () => {
     try {
       const count = await publicClient.readContract({
-        ...contractConfig,
-        functionName: 'taskCount',
-      });
+    ...contractConfig,
+    functionName: 'taskCount',
+  });
       setTaskCount(Number(count));
     } catch (error: any) {
       console.error('Error fetching task count:', String(error));
@@ -79,11 +82,17 @@ export default function Home() {
     fetchCount();
   }, [fetchCount]);
 
+  useEffect(() => {
+    console.log('Current Wallet Chain ID (as perceived by Wagmi):', currentChainId);
+    console.log('Current Wallet Chain (as perceived by Wagmi):', connectedChain?.name, connectedChain?.id);
+    console.log('Expected Chain ID:', baseSepolia.id);
+  }, [currentChainId, connectedChain]);
+
   const contracts = useMemo(() => {
     if (taskCount === undefined) return [];
     return Array.from({ length: taskCount }, (_, i) => ({
-      ...contractConfig,
-      functionName: 'getTask',
+    ...contractConfig,
+    functionName: 'getTask',
       args: [BigInt(i)],
     }));
   }, [taskCount]);
@@ -140,18 +149,48 @@ export default function Home() {
   }, [fetchedTasksData, isFetchingTasks, isFetchingError]);
 
   // Functions lifted from TaskList
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       setSelectedFile(event.target.files[0]);
     } else {
       setSelectedFile(null);
     }
-  };
+  }, [setSelectedFile]);
 
-  const handleSubmitCompletion = async (taskId: number) => {
+  // New useEffect to handle transaction status for all actions
+  useEffect(() => {
+    if (isTransactionSuccess && pendingTxHash) {
+      toast.success('Transaction confirmed!');
+      refetchTasksHook(); // Re-fetch all tasks to update their status
+      setPendingTxHash(undefined);
+      setCurrentToastId(undefined);
+      setLoading(false); // Ensure loading state is reset
+    } else if (!isTransactionPending && pendingTxHash) { // Transaction failed after being sent
+      toast.error('Transaction failed. Please check your wallet or the network.');
+      setPendingTxHash(undefined);
+      setCurrentToastId(undefined);
+      setLoading(false); // Ensure loading state is reset
+    }
+  }, [isTransactionSuccess, isTransactionPending, pendingTxHash, refetchTasksHook, setCurrentToastId]);
+
+  const handleSubmitCompletion = useCallback(async (taskId: number) => {
     if (!selectedFile) {
       toast.error('Please select a file to submit.');
       return;
+    }
+
+    console.log('Checking connected chain for submission:', { connectedChainId: connectedChain?.id, expectedChainId: baseSepolia.id });
+    if (!connectedChain || connectedChain.id !== baseSepolia.id) {
+      toast.error(`Please switch your wallet to the Base Sepolia network (Chain ID: ${baseSepolia.id}) to submit tasks.`);
+      try {
+        await switchChain({ chainId: baseSepolia.id });
+        toast.success("Network switched successfully. Please click 'Submit Completion' again.");
+        return;
+      } catch (switchError: any) {
+        console.error("Error switching chain:", switchError);
+        toast.error(`Failed to switch to Base Sepolia: ${switchError.message || switchError.shortMessage || String(switchError)}`);
+        return;
+      }
     }
 
     setLoading(true);
@@ -236,10 +275,11 @@ export default function Home() {
           ...contractConfig,
           functionName: 'submitTaskCompletion',
           args: [BigInt(taskId), ipfsCid],
+          chain: baseSepolia,
         }, {
           onSuccess: (hash) => {
             setPendingTxHash(hash);
-            toast.loading('Confirming transaction...', { id: toastId });
+            // No toast.loading here, useEffect will handle confirmation toast
           },
           onError: (err: any) => {
             setError(String(err));
@@ -258,12 +298,26 @@ export default function Home() {
       toast.error(`Submission failed: ${err instanceof Error ? err.message : String(err)}`, { id: currentToastId });
       setCurrentToastId(undefined);
     }
-  };
+  }, [selectedFile, tasks, address, connectedChain, switchChain, writeContract, contractConfig, baseSepolia, toast, setPendingTxHash, setCurrentToastId, setLoading, setError, currentReview, setShowReviewPopup, setCurrentReview]);
 
-  const handleAcceptTask = async (taskId: number, bounty: bigint) => {
+  const handleAcceptTask = useCallback(async (taskId: number, bounty: bigint) => {
     if (!address) {
       toast.error('Please connect your wallet to accept a task.');
       return;
+    }
+
+    console.log('Checking connected chain for acceptance:', { connectedChainId: connectedChain?.id, expectedChainId: baseSepolia.id });
+    if (!connectedChain || connectedChain.id !== baseSepolia.id) {
+      toast.error(`Please switch your wallet to the Base Sepolia network (Chain ID: ${baseSepolia.id}) to accept tasks.`);
+      try {
+        await switchChain({ chainId: baseSepolia.id });
+        toast.success("Network switched successfully. Please click 'Accept Task' again.");
+        return;
+      } catch (switchError: any) {
+        console.error("Error switching chain:", switchError);
+        toast.error(`Failed to switch to Base Sepolia: ${switchError.message || switchError.shortMessage || String(switchError)}`);
+        return;
+      }
     }
 
     setLoading(true);
@@ -276,10 +330,11 @@ export default function Home() {
         ...contractConfig,
         functionName: 'acceptTask',
         args: [BigInt(taskId)],
+        chain: baseSepolia,
       }, {
         onSuccess: (hash) => {
           setPendingTxHash(hash);
-          toast.loading('Confirming transaction...', { id: toastId });
+          // No toast.loading here, useEffect will handle confirmation toast
         },
         onError: (err: any) => {
           setError(String(err));
@@ -294,11 +349,11 @@ export default function Home() {
       toast.error(`Failed to accept task: ${err instanceof Error ? err.message : String(err)}`);
       setCurrentToastId(undefined);
     }
-  };
+  }, [address, connectedChain, switchChain, toast, setLoading, setError, setCurrentToastId, writeContract, contractConfig, baseSepolia, setPendingTxHash]);
 
   const renderTaskActions = (task: Task) => {
     if (!isConnected) {
-      return (
+  return (
         <Button
           onClick={() => window.ethereum.request({ method: 'eth_requestAccounts' })}
           className="w-full bg-white/15 backdrop-blur-2xl text-white hover:bg-white/25 text-lg px-10 py-6 border border-white/40 rounded-2xl font-light"
@@ -592,7 +647,7 @@ export default function Home() {
             )}
           </AnimatePresence>
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
   );
 }
