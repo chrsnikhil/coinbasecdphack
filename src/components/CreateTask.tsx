@@ -38,6 +38,7 @@ export function CreateTask() {
   const [currentReview, setCurrentReview] = useState<any>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasShownSuccessToast, setHasShownSuccessToast] = useState(false);
 
   const { writeContract, data: writeContractData, error: writeError } = useWriteContract();
 
@@ -46,7 +47,7 @@ export function CreateTask() {
   });
 
   useEffect(() => {
-    console.log('useEffect triggered in CreateTask:', { isSubmitting, isTransactionPending, isTransactionSuccess, writeContractData, currentToastId });
+    console.log('useEffect triggered in CreateTask:', { isSubmitting, isTransactionPending, isTransactionSuccess, writeContractData, currentToastId, hasShownSuccessToast });
 
     // Handle "Confirming transaction..." toast
     if (writeContractData && isTransactionPending) {
@@ -57,7 +58,7 @@ export function CreateTask() {
       }
     }
     // Handle success toast - This should be the highest priority if successful
-    else if (isTransactionSuccess && writeContractData) { // Ensure writeContractData is still around for context of this specific tx
+    else if (isTransactionSuccess && writeContractData && !hasShownSuccessToast) { // Only show if we haven't already shown it
       console.log('Transaction success path reached! Dismissing current toast and showing success toast.');
       if (currentToastId) toast.dismiss(currentToastId);
       toast.success('Task created successfully!');
@@ -68,6 +69,7 @@ export function CreateTask() {
       setRequiredFileTypes('');
       setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
+      setHasShownSuccessToast(true); // Mark that we've shown the success toast
     }
     // Handle failure toast (transaction completed, but not successfully)
     else if (!isTransactionPending && writeContractData && !isTransactionSuccess) {
@@ -83,7 +85,7 @@ export function CreateTask() {
       if (currentToastId) toast.dismiss(currentToastId);
       setCurrentToastId(undefined);
     }
-  }, [isTransactionPending, isTransactionSuccess, writeContractData, currentToastId]);
+  }, [isTransactionPending, isTransactionSuccess, writeContractData, currentToastId, hasShownSuccessToast]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -112,6 +114,7 @@ export function CreateTask() {
     }
 
     setIsSubmitting(true);
+    setHasShownSuccessToast(false); // Reset the flag for this new transaction
     const initialLoadingToastId = toast.loading("Creating task...", { duration: Infinity });
     setCurrentToastId(String(initialLoadingToastId));
 
@@ -158,6 +161,7 @@ export function CreateTask() {
 
       setIsSubmitting(false); // Reset submitting state after error
       setCurrentToastId(undefined); // Clear toast ID on error
+      setHasShownSuccessToast(false); // Reset success toast flag on error
     }
   };
 
