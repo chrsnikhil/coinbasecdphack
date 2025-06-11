@@ -15,6 +15,8 @@ import { ArrowRight, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlassCard from '@/components/GlassCard';
 import AllTasksPopup from '@/components/AllTasksPopup';
+import AIReviewsPopup from '@/components/AIReviewsPopup';
+import { reviewStorage } from '@/utils/reviewStorage';
 import { baseSepolia } from 'wagmi/chains';
 
 interface Task {
@@ -265,6 +267,24 @@ export default function Home() {
       const reviewStatus = agentData.review?.review?.overallStatus;
       const reviewMessage = agentData.review?.review?.overallAssessment?.feedback || agentData.review?.review?.message || 'Review result unknown.';
 
+      // Store the review in localStorage
+      try {
+        reviewStorage.addReview({
+          taskId: Number(taskId),
+          taskTitle: taskToReview.title,
+          taskDescription: taskToReview.description,
+          fileName: selectedFile.name,
+          fileType: selectedFile.type,
+          ipfsHash: ipfsCid,
+          review: agentData.review?.review,
+          status: reviewStatus && reviewStatus.toLowerCase().trim() === 'accepted' ? 'accepted' : 'rejected'
+        });
+        console.log('Review stored in localStorage');
+      } catch (storageError) {
+        console.error('Failed to store review in localStorage:', storageError);
+        // Don't fail the whole process if storage fails
+      }
+
       setCurrentReview(agentData.review?.review);
       setShowReviewPopup(true);
 
@@ -464,6 +484,7 @@ export default function Home() {
   };
 
   const [showAllTasksPopup, setShowAllTasksPopup] = useState(false);
+  const [showAIReviewsPopup, setShowAIReviewsPopup] = useState(false);
 
   return (
     <main className="relative min-h-screen">
@@ -483,30 +504,57 @@ export default function Home() {
           {isConnected && (
             <div className="mb-8 text-center">
               <CreateTask />
-              <Button
-                onClick={() => setShowAllTasksPopup(true)}
-                className="mt-4 w-auto mb-6 px-6 py-3 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20 hover:bg-white/20 transition-all duration-300 group relative overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="relative flex items-center justify-center gap-2">
-                  <svg
-                    className="w-5 h-5 text-white/80 group-hover:text-white transition-colors"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16m-7 6h7"
-                    />
-                  </svg>
-                  <span className="text-white/80 group-hover:text-white font-medium transition-colors">
-                    Show All Tasks
-                  </span>
-                </div>
-              </Button>
+              <div className="flex justify-center gap-4 mt-4 mb-6">
+                <Button
+                  onClick={() => setShowAllTasksPopup(true)}
+                  className="w-auto px-6 py-3 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20 hover:bg-white/20 transition-all duration-300 group relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div className="relative flex items-center justify-center gap-2">
+                    <svg
+                      className="w-5 h-5 text-white/80 group-hover:text-white transition-colors"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 6h16M4 12h16m-7 6h7"
+                      />
+                    </svg>
+                    <span className="text-white/80 group-hover:text-white font-medium transition-colors">
+                      Show All Tasks
+                    </span>
+                  </div>
+                </Button>
+
+                <Button
+                  onClick={() => setShowAIReviewsPopup(true)}
+                  className="w-auto px-6 py-3 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20 hover:bg-white/20 transition-all duration-300 group relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div className="relative flex items-center justify-center gap-2">
+                    <svg
+                      className="w-5 h-5 text-white/80 group-hover:text-white transition-colors"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    <span className="text-white/80 group-hover:text-white font-medium transition-colors">
+                      AI Reviews
+                    </span>
+                  </div>
+                </Button>
+              </div>
             </div>
           )}
           
@@ -646,6 +694,16 @@ export default function Home() {
               />
             )}
           </AnimatePresence>
+
+          {/* AI Reviews Popup */}
+          <AIReviewsPopup
+            isOpen={showAIReviewsPopup}
+            onClose={() => setShowAIReviewsPopup(false)}
+            onViewReview={(review) => {
+              setCurrentReview(review);
+              setShowReviewPopup(true);
+            }}
+          />
         </div>
         </div>
       </main>
