@@ -2,10 +2,10 @@
 
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
 import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
-import { parseEther } from 'viem';
+import { parseEther, UserRejectedRequestError } from 'viem';
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
 import GlassCard from '@/components/GlassCard';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
@@ -47,18 +47,46 @@ export function CreateTask() {
   });
 
   useEffect(() => {
-    if (isTransactionSuccess) {
+    console.log('useEffect triggered in CreateTask:', { isSubmitting, isTransactionPending, isTransactionSuccess, pendingTxHash, currentToastId });
+
+    // Handle "Confirming transaction..." toast
+    if (pendingTxHash && isTransactionPending) {
+      if (!currentToastId) {
+        console.log('Showing Confirming transaction toast...');
+        const id = toast.loading("Confirming transaction...", { duration: Infinity });
+        setCurrentToastId(String(id));
+      }
+    }
+    // Handle success toast - This should be the highest priority if successful
+    else if (isTransactionSuccess && pendingTxHash) { // Ensure pendingTxHash is still around for context of this specific tx
+      console.log('Transaction success path reached! Dismissing current toast and showing success toast.');
+      if (currentToastId) toast.dismiss(currentToastId);
+      toast.success('Task created successfully!');
+      // Reset form and states after successful transaction
       setTaskName('');
       setTaskDescription('');
       setBounty('');
       setRequiredFileTypes('');
       setPendingTxHash(undefined);
-      setIsSubmitting(false);
-      if (currentToastId) toast.dismiss(currentToastId); // Dismiss any pending toast
-      toast.success('Task created successfully!');
+      setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
     }
-  }, [isTransactionSuccess, currentToastId]);
+    // Handle failure toast (transaction completed, but not successfully)
+    else if (!isTransactionPending && pendingTxHash && !isTransactionSuccess) {
+      console.log('Transaction failed path reached. Dismissing current toast and showing error toast.');
+      if (currentToastId) toast.dismiss(currentToastId);
+      toast.error('Task creation failed!');
+      setPendingTxHash(undefined);
+      setIsSubmitting(false); // Only reset isSubmitting here
+      setCurrentToastId(undefined);
+    }
+    // If pendingTxHash becomes undefined (e.g., from an error in handleSubmit before setting hash),
+    // and there's a currentToastId, dismiss it.
+    else if (!pendingTxHash && currentToastId) {
+      if (currentToastId) toast.dismiss(currentToastId);
+      setCurrentToastId(undefined);
+    }
+  }, [isTransactionPending, isTransactionSuccess, pendingTxHash, currentToastId]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -81,60 +109,67 @@ export function CreateTask() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taskName.trim() || !taskDescription.trim()) return;
+    if (!taskName.trim() || !taskDescription.trim() || !bounty || parseFloat(bounty) <= 0) {
+      toast.error("Please fill in all fields correctly, including a valid bounty that is greater than 0.");
+      return;
+    }
 
     setIsSubmitting(true);
-    const toastId = toast.loading("Creating task...", {
-      duration: Infinity,
-    });
-    setCurrentToastId(String(toastId));
+    const initialLoadingToastId = toast.loading("Creating task...", { duration: Infinity });
+    setCurrentToastId(String(initialLoadingToastId));
 
     try {
+      const parsedBounty = parseEther(bounty);
+      // console.log("Bounty string:", bounty); // Removed debug log
+      // console.log("Parsed bounty (BigInt):", parsedBounty); // Removed debug log
+
+      const fileTypesArray = requiredFileTypes.split(',').map(type => type.trim()).filter(type => type !== '');
+
+      // console.log("Arguments for createTask:", { // Removed debug log
+      //   taskName,
+      //   taskDescription,
+      //   parsedBounty: parsedBounty.toString(),
+      //   fileTypesArray,
+      // });
+
+      // console.log("Attempting to write contract..."); // Removed debug log
       const txHash = await writeContract({
-        address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-        abi: [
-          {
-            inputs: [
-              { name: "name", type: "string" },
-              { name: "description", type: "string" },
-            ],
-            name: "createTask",
-            outputs: [],
-            stateMutability: "nonpayable",
-            type: "function",
-          },
-        ],
-        functionName: "createTask",
-        args: [taskName, taskDescription],
+        ...contractConfig,
+        functionName: 'createTask',
+        args: [taskName, taskDescription, parsedBounty, fileTypesArray],
+        value: parsedBounty,
       });
+
+      // console.log("Result of writeContract:", txHash); // Removed debug log
 
       if (typeof txHash === 'string') {
+        // console.log("Transaction hash received:", txHash); // Removed debug log
         setPendingTxHash(txHash as `0x${string}`);
-        toast.loading("Waiting for transaction...", {
-          id: toastId,
-          duration: Infinity,
-        });
-
-        // Wait for transaction
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-
-        toast.success("Task created successfully!", {
-          id: toastId,
-          duration: 3000,
-        });
-        setTaskName("");
-        setTaskDescription("");
+      } else {
+        if (initialLoadingToastId) toast.dismiss(initialLoadingToastId);
+        toast.error("Post creation initiated. Please confirm in your wallet.");
+        setIsSubmitting(false);
+        setCurrentToastId(undefined);
       }
-    } catch (error) {
-      console.error("Error creating task:", error);
-      toast.error("Failed to create task", {
-        id: toastId,
-        duration: 3000,
-      });
-    } finally {
-      setIsSubmitting(false);
-      setPendingTxHash(undefined);
-      setCurrentToastId(undefined);
+
+    } catch (err: any) {
+      // console.error("Error during contract write or initial checks:", err); // Modified error logging
+      setError(err.shortMessage || String(err));
+      if (initialLoadingToastId) toast.dismiss(initialLoadingToastId); // Dismiss initial loading toast on error
+
+      if (err instanceof UserRejectedRequestError) {
+        toast.error("Transaction rejected by user in wallet.", {
+          duration: 5000,
+        });
+      } else {
+        toast.error(`Failed to create task: ${err.shortMessage || String(err)}`, {
+          duration: 5000,
+        });
+      }
+
+      setIsSubmitting(false); // Reset submitting state after error
+      setPendingTxHash(undefined); // Clear pending hash on error
+      setCurrentToastId(undefined); // Clear toast ID on error
     }
   };
 
@@ -248,39 +283,26 @@ export function CreateTask() {
                 whileFocus="focus"
               />
             </motion.div>
-            {!isConnected ? (
-              <motion.button
-                type="button"
-                onClick={() => window.ethereum.request({ method: 'eth_requestAccounts' })}
-                className="w-full bg-white/15 backdrop-blur-2xl text-white hover:bg-white/25 text-lg px-10 py-6 border border-white/40 rounded-2xl font-light"
-                variants={buttonVariants}
-                whileHover="hover"
-                whileTap="tap"
-              >
-                Connect Wallet to Create Task
-              </motion.button>
-            ) : (
-              <motion.button
-                type="submit"
-                disabled={isSubmitting || isTransactionPending}
-                className={`w-full bg-white/15 backdrop-blur-2xl text-white text-lg px-10 py-6 border border-white/40 rounded-2xl font-light ${
-                  isSubmitting || isTransactionPending
-                    ? 'opacity-50 cursor-not-allowed'
-                    : 'hover:bg-white/25'
-                }`}
-                variants={buttonVariants}
-                whileHover="hover"
-                whileTap="tap"
-              >
-                {isSubmitting || isTransactionPending ? (
-                  <div className="flex items-center justify-center">
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Processing...
-                  </div>
-                ) : (
-                  'Create Task'
-                )}
-              </motion.button>
-            )}
+
+            <motion.button
+              type="submit"
+              disabled={isSubmitting || !taskName.trim() || !taskDescription.trim() || !bounty || parseFloat(bounty) <= 0}
+              className="w-full px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 
+                         border border-white/20 transition-all duration-300
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         flex items-center justify-center gap-2"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isSubmitting || isTransactionPending ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>{isSubmitting ? "Creating Task..." : "Confirming..."}</span>
+                </>
+              ) : (
+                "Create Task"
+              )}
+            </motion.button>
           </motion.form>
         </GlassCard>
       </motion.div>
