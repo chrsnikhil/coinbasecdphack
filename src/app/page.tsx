@@ -384,7 +384,7 @@ export default function Home() {
         <Button
           onClick={() => handleAcceptTask(task.id, task.bounty)}
           disabled={loading}
-          className={`w-full bg-white/15 backdrop-blur-2xl text-white text-lg px-10 py-6 border border-white/40 rounded-2xl font-light ${
+          className={`w-full bg-white/15 backdrop-blur-2xl text-white text-base px-4 py-3 border border-white/40 rounded-2xl font-light overflow-hidden whitespace-nowrap text-ellipsis ${
             loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/25'
           }`}
         >

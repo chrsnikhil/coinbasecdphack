@@ -112,32 +112,38 @@ export default function AllTasksPopup({
               <p>No tasks available at the moment. Create one!</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-8 p-1">
               {tasks.map((task) => (
-                <GlassCard key={task.id} className="flex flex-col justify-between p-6 w-full text-white/90 border border-white/10 rounded-3xl" hoverEffect={true}>
-                  <div>
-                    <h3 className="text-xl font-light mb-2 flex items-center justify-between">
-                      {task.title}
-                      {task.isCompleted && (
-                        <span className="ml-2 text-green-400 text-sm font-medium bg-green-500/10 px-3 py-1 rounded-full">Completed</span>
-                      )}
-                      {task.isActive && !task.isCompleted && (
-                        <span className="ml-2 text-blue-400 text-sm font-medium bg-blue-500/10 px-3 py-1 rounded-full">Active</span>
-                      )}
-                    </h3>
-                    <p className="text-white/70 text-sm mb-4 line-clamp-3">{task.description}</p>
-                    <div className="text-sm mb-4">
-                      <p><span className="font-light text-white/60">Bounty:</span> <span className="font-medium">{formatEther(task.bounty)} ETH</span></p>
-                      <p><span className="font-light text-white/60">Creator:</span> <span className="font-medium line-clamp-1">{task.creator}</span></p>
-                      {task.worker !== '0x0000000000000000000000000000000000000000' && (
-                        <p><span className="font-light text-white/60">Worker:</span> <span className="font-medium line-clamp-1">{task.worker}</span></p>
-                      )}
-                      {task.requiredFileTypes.length > 0 && (
-                        <p><span className="font-light text-white/60">File Types:</span> <span className="font-medium">{task.requiredFileTypes.join(', ')}</span></p>
-                      )}
+                <GlassCard key={task.id} className="flex flex-col justify-between p-8 w-full text-white/90 border border-white/10 rounded-3xl" hoverEffect={true}>
+                  <div className="flex flex-col md:flex-row md:space-x-8">
+                    <div className="md:w-2/3">
+                      <h3 className="text-2xl font-light mb-3 flex items-center justify-between">
+                        {task.title}
+                        <div className="flex items-center space-x-2">
+                          {task.isCompleted && (
+                            <span className="ml-2 text-green-400 text-sm font-medium bg-green-500/10 px-3 py-1 rounded-full">Completed</span>
+                          )}
+                          {task.isActive && !task.isCompleted && (
+                            <span className="ml-2 text-blue-400 text-sm font-medium bg-blue-500/10 px-3 py-1 rounded-full">Active</span>
+                          )}
+                        </div>
+                      </h3>
+                      <p className="text-white/70 text-base mb-4 line-clamp-4 leading-relaxed">{task.description}</p>
+                    </div>
+                    <div className="md:w-1/3 mt-4 md:mt-0">
+                      <div className="text-base space-y-2">
+                        <p><span className="font-light text-white/60">Bounty:</span> <span className="font-medium">{formatEther(task.bounty)} ETH</span></p>
+                        <p><span className="font-light text-white/60">Creator:</span> <span className="font-medium line-clamp-1 break-all">{task.creator}</span></p>
+                        {task.worker !== '0x0000000000000000000000000000000000000000' && (
+                          <p><span className="font-light text-white/60">Worker:</span> <span className="font-medium line-clamp-1 break-all">{task.worker}</span></p>
+                        )}
+                        {task.requiredFileTypes.length > 0 && (
+                          <p><span className="font-light text-white/60">File Types:</span> <span className="font-medium">{task.requiredFileTypes.join(', ')}</span></p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-6">
                     {renderTaskActions(task)}
                   </div>
                 </GlassCard>
