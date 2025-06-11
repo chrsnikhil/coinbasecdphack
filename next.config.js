@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const webpack = require('webpack');
+
 const nextConfig = {
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -21,7 +23,7 @@ const nextConfig = {
 
       // Add Buffer polyfill
       config.plugins.push(
-        new config.webpack.ProvidePlugin({
+        new webpack.ProvidePlugin({
           Buffer: ['buffer', 'Buffer'],
           process: 'process/browser',
         })
@@ -44,6 +46,33 @@ const nextConfig = {
   },
   // Add this to handle ES modules
   transpilePackages: ['@coinbase/agentkit'],
+  // Add headers configuration
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+        ],
+      },
+    ];
+  },
+  // Add experimental features
+  experimental: {
+    serverActions: {},
+  },
+  // Add rewrites to handle 404s
+  async rewrites() {
+    return [
+      {
+        source: '/:path*',
+        destination: '/',
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig; 

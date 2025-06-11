@@ -2,206 +2,311 @@
 
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
 import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
-import { parseEther } from 'viem';
+import { parseEther, UserRejectedRequestError } from 'viem';
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import toast, { Toaster } from 'react-hot-toast';
+import toast from "react-hot-toast";
+import GlassCard from '@/components/GlassCard';
+import { motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 
-interface CreateTaskProps {
-  onTaskCreated: () => void; // Callback to refresh task list
+interface Task {
+  id: number;
+  creator: string;
+  title: string;
+  description: string;
+  bounty: bigint;
+  worker: string;
+  isCompleted: boolean;
+  isActive: boolean;
+  requiredFileTypes: string[];
+  submittedFileCID: string;
 }
 
-export default function CreateTask({ onTaskCreated }: CreateTaskProps) {
+interface CreateTaskProps {
+  onTaskCreated?: () => void;
+}
+
+export function CreateTask({ onTaskCreated }: CreateTaskProps) {
   const { address, isConnected } = useAccount();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [taskName, setTaskName] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
   const [bounty, setBounty] = useState('');
   const [requiredFileTypes, setRequiredFileTypes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>(undefined);
-  const [currentToastId, setCurrentToastId] = useState<string | undefined>(undefined); // To keep track of the active toast
+  const [currentToastId, setCurrentToastId] = useState<string | undefined>(undefined);
+  const [showAllTasks, setShowAllTasks] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showReviewPopup, setShowReviewPopup] = useState(false);
+  const [currentReview, setCurrentReview] = useState<any>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasShownSuccessToast, setHasShownSuccessToast] = useState(false);
 
-  const { writeContract } = useWriteContract();
+  const { writeContract, data: writeContractData, error: writeError } = useWriteContract();
 
   const { isLoading: isTransactionPending, isSuccess: isTransactionSuccess } = useWaitForTransactionReceipt({
-    hash: pendingTxHash,
+    hash: writeContractData,
   });
 
   useEffect(() => {
-    if (isTransactionSuccess) {
-      setTitle('');
-      setDescription('');
+    console.log('useEffect triggered in CreateTask:', { isSubmitting, isTransactionPending, isTransactionSuccess, writeContractData, currentToastId, hasShownSuccessToast });
+
+    // Handle "Confirming transaction..." toast
+    if (writeContractData && isTransactionPending) {
+      if (!currentToastId) {
+        console.log('Showing Confirming transaction toast...');
+        const id = toast.loading("Confirming transaction...", { duration: Infinity });
+        setCurrentToastId(String(id));
+      }
+    }
+    // Handle success toast - This should be the highest priority if successful
+    else if (isTransactionSuccess && writeContractData && !hasShownSuccessToast) { // Only show if we haven't already shown it
+      console.log('Transaction success path reached! Dismissing current toast and showing success toast.');
+      if (currentToastId) toast.dismiss(currentToastId);
+      toast.success('Task created successfully!');
+      // Reset form and states after successful transaction
+      setTaskName('');
+      setTaskDescription('');
       setBounty('');
       setRequiredFileTypes('');
-      setPendingTxHash(undefined);
-      setIsSubmitting(false);
-      if (currentToastId) toast.dismiss(currentToastId); // Dismiss any pending toast
-      toast.success('Task created successfully!', { duration: 3000 });
+      setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
-      onTaskCreated(); // Trigger refresh in parent
-    }
-  }, [isTransactionSuccess, onTaskCreated, currentToastId]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!address) {
-      toast.error('Please connect your wallet to create a task.', { duration: 3000 });
-      return;
-    }
-
-    try {
-      setError(null);
-      setIsSubmitting(true);
-
-      const bountyInWei = parseEther(bounty);
-      const fileTypesArray = requiredFileTypes.split(',').map(type => type.trim()).filter(type => type.length > 0);
+      setHasShownSuccessToast(true); // Mark that we've shown the success toast
       
-      const toastId = toast.loading('Creating task...');
-      setCurrentToastId(toastId);
-
-      writeContract({
-        ...contractConfig,
-        functionName: 'createTask',
-        args: [title, description, bountyInWei, fileTypesArray],
-        value: bountyInWei,
-      }, {
-        onSuccess: (hash) => {
-          setPendingTxHash(hash);
-          toast.loading('Confirming transaction...', { id: toastId }); // Removed duration here
-        },
-        onError: (err) => {
-          setError(err.message);
-          setIsSubmitting(false);
-          toast.error(`Failed to create task: ${err.message}`, { id: toastId, duration: 3000 });
-          setCurrentToastId(undefined);
-        }
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create task');
-      setIsSubmitting(false);
-      toast.error('Failed to create task', { duration: 3000 });
+      // Call the callback to update the task list
+      if (onTaskCreated) {
+        onTaskCreated();
+      }
+    }
+    // Handle failure toast (transaction completed, but not successfully)
+    else if (!isTransactionPending && writeContractData && !isTransactionSuccess) {
+      console.log('Transaction failed path reached. Dismissing current toast and showing error toast.');
+      if (currentToastId) toast.dismiss(currentToastId);
+      toast.error('Task creation failed!');
+      setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
+    }
+    // If writeContractData becomes undefined (e.g., from an error in handleSubmit before setting hash),
+    // and there's a currentToastId, dismiss it.
+    else if (!writeContractData && currentToastId) {
+      if (currentToastId) toast.dismiss(currentToastId);
+      setCurrentToastId(undefined);
+    }
+  }, [isTransactionPending, isTransactionSuccess, writeContractData, currentToastId, hasShownSuccessToast, onTaskCreated]);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
     }
   };
 
+  const handleSubmitCompletion = async (taskId: number) => {
+    // Implementation will be added when needed
+  };
+
+  const handleAcceptTask = async (taskId: number, bounty: bigint) => {
+    // Implementation will be added when needed
+  };
+
+  const renderTaskActions = (task: Task) => {
+    // Implementation will be added when needed
+    return null;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskName.trim() || !taskDescription.trim() || !bounty || parseFloat(bounty) <= 0) {
+      toast.error("Please fill in all fields correctly, including a valid bounty that is greater than 0.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setHasShownSuccessToast(false); // Reset the flag for this new transaction
+    const initialLoadingToastId = toast.loading("Creating task...", { duration: Infinity });
+    setCurrentToastId(String(initialLoadingToastId));
+
+    try {
+      const parsedBounty = parseEther(bounty);
+      // console.log("Bounty string:", bounty); // Removed debug log
+      // console.log("Parsed bounty (BigInt):", parsedBounty); // Removed debug log
+
+      const fileTypesArray = requiredFileTypes.split(',').map(type => type.trim()).filter(type => type !== '');
+
+      // console.log("Arguments for createTask:", { // Removed debug log
+      //   taskName,
+      //   taskDescription,
+      //   parsedBounty: parsedBounty.toString(),
+      //   fileTypesArray,
+      // });
+
+      // console.log("Attempting to write contract..."); // Removed debug log
+      await writeContract({
+        ...contractConfig,
+        functionName: 'createTask',
+        args: [taskName, taskDescription, parsedBounty, fileTypesArray],
+        value: parsedBounty,
+      });
+
+      // If writeContract succeeds without throwing, the transaction was initiated
+      // The transaction hash is now available in writeContractData from the hook
+      if (initialLoadingToastId) toast.dismiss(initialLoadingToastId);
+
+    } catch (err: any) {
+      // console.error("Error during contract write or initial checks:", err); // Modified error logging
+      setError(err.shortMessage || String(err));
+      if (initialLoadingToastId) toast.dismiss(initialLoadingToastId); // Dismiss initial loading toast on error
+
+      if (err instanceof UserRejectedRequestError) {
+        toast.error("Transaction rejected by user in wallet.", {
+          duration: 5000,
+        });
+      } else {
+        toast.error(`Failed to create task: ${err.shortMessage || String(err)}`, {
+          duration: 5000,
+        });
+      }
+
+      setIsSubmitting(false); // Reset submitting state after error
+      setCurrentToastId(undefined); // Clear toast ID on error
+      setHasShownSuccessToast(false); // Reset success toast flag on error
+    }
+  };
+
+  const inputVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
+    hover: { scale: 1.01, borderColor: "rgba(255, 255, 255, 0.6)", transition: { duration: 0.2 } },
+    focus: { borderColor: "rgba(255, 255, 255, 0.8)", boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.2)", transition: { duration: 0.2 } }
+  };
+
+  const buttonVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut", delay: 0.6 } },
+    hover: { scale: 1.02, backgroundColor: "rgba(255, 255, 255, 0.25)", transition: { duration: 0.2 } },
+    tap: { scale: 0.98 }
+  };
+
   return (
-    <div className="w-full max-w-2xl mx-auto px-4">
-      <Toaster position="top-left" toastOptions={{
-        style: {
-          background: '#000',
-          color: '#fff',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-        },
-        success: {
-          iconTheme: {
-            primary: '#10B981',
-            secondary: '#fff',
-          },
-          duration: 3000,
-        },
-        error: {
-          iconTheme: {
-            primary: '#EF4444',
-            secondary: '#fff',
-          },
-          duration: 3000,
-        },
-        loading: {
-          // No explicit duration here, will be dismissed by success/error or manually
-        },
-      }} />
-      <h2 className="text-3xl font-bold mb-8 tracking-tight">
-        Create New Task
-      </h2>
-      {error && (
-        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500">
-          {error}
-        </div>
-      )}
-      <div className="bg-black/90 backdrop-blur-sm rounded-lg p-6 border border-white/10 shadow-lg">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="title" className="block text-sm font-medium text-zinc-300">
-              Task Title
-            </label>
-            <input
-              id="title"
-              value={title}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
-              placeholder="Enter task title"
-              required
-              className="w-full px-4 py-2 rounded-lg bg-black/50 border border-white/10 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="description" className="block text-sm font-medium text-zinc-300">
-              Task Description
-            </label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-              placeholder="Describe the task in detail"
-              required
-              className="w-full px-4 py-2 rounded-lg bg-black/50 border border-white/10 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none min-h-[100px]"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="bounty" className="block text-sm font-medium text-zinc-300">
-              Bounty (ETH)
-            </label>
-            <input
-              id="bounty"
-              type="text"
-              value={bounty}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                const value = e.target.value;
-                if (/^\d*\.?\d*$/.test(value)) {
-                  setBounty(value);
-                }
-              }}
-              placeholder="Enter bounty amount in ETH"
-              required
-              className="w-full px-4 py-2 rounded-lg bg-black/50 border border-white/10 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="requiredFileTypes" className="block text-sm font-medium text-zinc-300">
-              Required File Types (comma-separated, e.g., pdf, docx, jpg)
-            </label>
-            <input
-              id="requiredFileTypes"
-              type="text"
-              value={requiredFileTypes}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRequiredFileTypes(e.target.value)}
-              placeholder="e.g., pdf, docx, jpg"
-              className="w-full px-4 py-2 rounded-lg bg-black/50 border border-white/10 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-            />
-          </div>
-          {!isConnected ? (
-            <Button
-              type="button"
-              onClick={() => window.ethereum.request({ method: 'eth_requestAccounts' })}
-              className="w-full bg-white text-black hover:bg-zinc-200"
+    <div className="w-full max-w-2xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="relative"
+      >
+        <GlassCard className="w-full max-w-2xl mx-auto p-8" hoverEffect={false}>
+          <h2 className="text-2xl font-light mb-8">
+            Create New Task
+          </h2>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500"
             >
-              Connect Wallet to Create Task
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              disabled={isSubmitting || isTransactionPending}
-              className={`w-full ${
-                isSubmitting || isTransactionPending
-                  ? 'bg-white/10 text-zinc-400'
-                  : 'bg-white text-black hover:bg-zinc-200'
-              }`}
-            >
-              {isSubmitting || isTransactionPending ? 'Creating Task...' : 'Create Task'}
-            </Button>
+              {error}
+            </motion.div>
           )}
-        </form>
-      </div>
+          
+          <motion.form
+            onSubmit={handleSubmit}
+            className="space-y-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+          >
+            <motion.div variants={inputVariants} className="space-y-2">
+              <label htmlFor="taskName" className="block text-base font-light text-white/70">
+                Task Name
+              </label>
+              <motion.input
+                id="taskName"
+                value={taskName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTaskName(e.target.value)}
+                placeholder="Enter task name"
+                required
+                className="w-full px-4 py-2 rounded-2xl bg-white/5 border border-white/20 text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                whileHover="hover"
+                whileFocus="focus"
+              />
+            </motion.div>
+            <motion.div variants={inputVariants} className="space-y-2">
+              <label htmlFor="taskDescription" className="block text-base font-light text-white/70">
+                Task Description
+              </label>
+              <motion.textarea
+                id="taskDescription"
+                value={taskDescription}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTaskDescription(e.target.value)}
+                placeholder="Enter task description"
+                required
+                className="w-full px-4 py-2 rounded-2xl bg-white/5 border border-white/20 text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none min-h-[100px]"
+                whileHover="hover"
+                whileFocus="focus"
+              />
+            </motion.div>
+            <motion.div variants={inputVariants} className="space-y-2">
+              <label htmlFor="bounty" className="block text-base font-light text-white/70">
+                Bounty (ETH)
+              </label>
+              <motion.input
+                id="bounty"
+                type="text"
+                value={bounty}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const value = e.target.value;
+                  if (/^\d*\.?\d*$/.test(value)) {
+                    setBounty(value);
+                  }
+                }}
+                placeholder="Enter bounty amount in ETH"
+                required
+                className="w-full px-4 py-2 rounded-2xl bg-white/5 border border-white/20 text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                whileHover="hover"
+                whileFocus="focus"
+              />
+            </motion.div>
+            <motion.div variants={inputVariants} className="space-y-2">
+              <label htmlFor="requiredFileTypes" className="block text-base font-light text-white/70">
+                Required File Types (comma-separated, e.g., pdf, docx, jpg)
+              </label>
+              <motion.input
+                id="requiredFileTypes"
+                type="text"
+                value={requiredFileTypes}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRequiredFileTypes(e.target.value)}
+                placeholder="e.g., pdf, docx, jpg"
+                className="w-full px-4 py-2 rounded-2xl bg-white/5 border border-white/20 text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                whileHover="hover"
+                whileFocus="focus"
+              />
+            </motion.div>
+
+            <motion.button
+              type="submit"
+              disabled={isSubmitting || !taskName.trim() || !taskDescription.trim() || !bounty || parseFloat(bounty) <= 0}
+              className="w-full px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 
+                         border border-white/20 transition-all duration-300
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         flex items-center justify-center gap-2"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isSubmitting || isTransactionPending ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>{isSubmitting ? "Creating Task..." : "Confirming..."}</span>
+                </>
+              ) : (
+                "Create Task"
+              )}
+            </motion.button>
+          </motion.form>
+        </GlassCard>
+      </motion.div>
     </div>
   );
 } 

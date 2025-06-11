@@ -1,22 +1,12 @@
 'use client';
 
-import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
-import { FREELANCE_PLATFORM_ABI, contractConfig } from '@/config/contractConfig';
-import { formatEther } from 'viem';
-import React, { useEffect, useState, Dispatch, SetStateAction } from 'react';
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel";
-import { Button } from "@/components/ui/button";
-import toast from 'react-hot-toast';
-import { publicClient, walletClient } from "@/utils/viem";
-import GlassCard from '@/components/GlassCard';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import React, { Dispatch, SetStateAction } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import GlassCard from '@/components/GlassCard';
+import { formatEther } from 'viem';
+import { Button } from "@/components/ui/button";
+import { Loader2 } from 'lucide-react';
+import { useAccount } from 'wagmi';
 
 interface Task {
   id: number;
@@ -31,9 +21,9 @@ interface Task {
   submittedFileCID: string;
 }
 
-interface TaskListProps {
+interface AllTasksPopupProps {
   tasks: Task[];
-  refetchTasks: () => void;
+  onClose: () => void;
   loading: boolean;
   error: string | null;
   selectedFile: File | null;
@@ -49,9 +39,9 @@ interface TaskListProps {
   setCurrentReview: Dispatch<SetStateAction<any>>;
 }
 
-export default function TaskList({
+export default function AllTasksPopup({
   tasks,
-  refetchTasks,
+  onClose,
   loading,
   error,
   selectedFile,
@@ -65,26 +55,14 @@ export default function TaskList({
   renderTaskActions,
   setShowReviewPopup,
   setCurrentReview,
-}: TaskListProps) {
+}: AllTasksPopupProps) {
   const { address, isConnected } = useAccount();
-  const { writeContract } = useWriteContract();
 
-  const { isLoading: isTransactionPending, isSuccess: isTransactionSuccess } = useWaitForTransactionReceipt({
-    hash: pendingTxHash,
-  });
-
-  useEffect(() => {
-    if (isTransactionSuccess) {
-      if (currentToastId) toast.dismiss(currentToastId);
-      toast.success('Task submitted for review!');
-      refetchTasks();
-    }
-  }, [isTransactionSuccess, refetchTasks, currentToastId]);
-
+  // Variants for popup animation (can be shared from page.tsx if defined there)
   const popupVariants = {
     hidden: { opacity: 0, scale: 0.8, y: -50 },
-    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" } },
-    exit: { opacity: 0, scale: 0.8, y: 50, transition: { duration: 0.2, ease: "easeIn" } },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 100, damping: 20 } },
+    exit: { opacity: 0, scale: 0.8, y: 50, transition: { duration: 0.2, ease: 'easeIn' } },
   };
 
   const backdropVariants = {
@@ -95,82 +73,98 @@ export default function TaskList({
 
   const sectionVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
   };
 
   return (
-    <div className="w-full relative">
-      {error && (
-        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500">
-          {error}
-        </div>
-      )}
-      <Carousel
-        opts={{
-          align: "start",
-          loop: true,
-        }}
-        className="w-full px-16 relative"
+    <motion.div
+      className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[70] flex items-center justify-center p-4"
+      variants={backdropVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      onClick={onClose}
+    >
+      <motion.div
+        className="bg-black/80 border border-white/20 rounded-3xl p-8 max-w-5xl w-full h-[90vh] text-white/90 relative shadow-2xl flex flex-col"
+        variants={popupVariants}
+        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside popup
       >
-        <CarouselContent className="-ml-4">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-light text-white/95">All Tasks</h2>
+          <button
+            onClick={onClose}
+            className="bg-white/15 backdrop-blur-md text-white/90 hover:bg-white/25 text-lg px-4 py-2 border border-white/40 rounded-full font-light transition-colors duration-200"
+          >
+            Close
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500">
+            {error}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {tasks.length === 0 ? (
-            <CarouselItem className="pl-4 md:basis-full lg:basis-full">
-              <GlassCard className="p-6 text-center text-white/70 min-h-[300px] flex items-center justify-center">
-                <p>No tasks available at the moment. Be the first to create one!</p>
-              </GlassCard>
-            </CarouselItem>
+            <div className="text-center text-white/70 min-h-[200px] flex items-center justify-center">
+              <p>No tasks available at the moment. Create one!</p>
+            </div>
           ) : (
-            tasks.map((task) => (
-              <CarouselItem key={task.id} className="pl-4 md:basis-1/2 lg:basis-1/3 flex">
-                <GlassCard className="flex flex-col justify-between p-6 w-full text-white/90 border border-white/10 rounded-3xl" hoverEffect={true}>
-                  <div>
-                    <h3 className="text-xl font-light mb-2 flex items-center justify-between">
-                      {task.title}
-                      {task.isCompleted && (
-                        <span className="ml-2 text-green-400 text-sm font-medium bg-green-500/10 px-3 py-1 rounded-full">Completed</span>
-                      )}
-                      {task.isActive && !task.isCompleted && (
-                        <span className="ml-2 text-blue-400 text-sm font-medium bg-blue-500/10 px-3 py-1 rounded-full">Active</span>
-                      )}
-                    </h3>
-                    <p className="text-white/70 text-sm mb-4 line-clamp-3">{task.description}</p>
-                    <div className="text-sm mb-4">
-                      <p><span className="font-light text-white/60">Bounty:</span> <span className="font-medium">{formatEther(task.bounty)} ETH</span></p>
-                      <p><span className="font-light text-white/60">Creator:</span> <span className="font-medium line-clamp-1">{task.creator}</span></p>
-                      {task.worker !== '0x0000000000000000000000000000000000000000' && (
-                        <p><span className="font-light text-white/60">Worker:</span> <span className="font-medium line-clamp-1">{task.worker}</span></p>
-                      )}
-                      {task.requiredFileTypes.length > 0 && (
-                        <p><span className="font-light text-white/60">File Types:</span> <span className="font-medium">{task.requiredFileTypes.join(', ')}</span></p>
-                      )}
+            <div className="grid grid-cols-3 gap-8 p-1">
+              {tasks.map((task) => (
+                <GlassCard key={task.id} className="flex flex-col justify-between p-8 w-full text-white/90 border border-white/10 rounded-3xl" hoverEffect={true}>
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-start md:space-x-8">
+                    <div className="md:flex-grow">
+                      <h3 className="text-2xl font-light mb-3 flex flex-wrap items-center justify-between gap-2">
+                        {task.title}
+                        <div className="flex items-center space-x-2">
+                          {task.isCompleted && (
+                            <span className="text-green-400 text-sm font-medium bg-green-500/10 px-3 py-1 rounded-full">Completed</span>
+                          )}
+                          {task.isActive && !task.isCompleted && (
+                            <span className="text-blue-400 text-sm font-medium bg-blue-500/10 px-3 py-1 rounded-full">Active</span>
+                          )}
+                        </div>
+                      </h3>
+                      <p className="text-white/70 text-base mb-4 line-clamp-4 leading-relaxed">{task.description}</p>
+                    </div>
+                    <div className="md:w-60 md:flex-shrink-0 mt-4 md:mt-0">
+                      <div className="text-base space-y-2">
+                        <p><span className="font-light text-white/60">Bounty:</span> <span className="font-medium">{formatEther(task.bounty)} ETH</span></p>
+                        <p><span className="font-light text-white/60">Creator:</span> <span className="font-medium line-clamp-1 break-all">{task.creator}</span></p>
+                        {task.worker !== '0x0000000000000000000000000000000000000000' && (
+                          <p><span className="font-light text-white/60">Worker:</span> <span className="font-medium line-clamp-1 break-all">{task.worker}</span></p>
+                        )}
+                        {task.requiredFileTypes.length > 0 && (
+                          <p><span className="font-light text-white/60">File Types:</span> <span className="font-medium">{task.requiredFileTypes.join(', ')}</span></p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-6">
                     {renderTaskActions(task)}
                   </div>
                 </GlassCard>
-              </CarouselItem>
-            ))
+              ))}
+            </div>
           )}
-        </CarouselContent>
-        <CarouselPrevious className="absolute left-8 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white hover:bg-white/10 border border-white/20 rounded-full w-10 h-10 flex items-center justify-center transition-colors duration-200" />
-        <CarouselNext className="absolute right-8 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white hover:bg-white/10 border border-white/20 rounded-full w-10 h-10 flex items-center justify-center transition-colors duration-200" />
-      </Carousel>
+        </div>
 
-      <AnimatePresence>
         {showReviewPopup && currentReview && (
           <motion.div
-            className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[60] flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[80] flex items-center justify-center p-4"
             variants={backdropVariants}
             initial="hidden"
             animate="visible"
             exit="exit"
-            onClick={() => setShowReviewPopup(false)}
+            onClick={() => setShowReviewPopup(false)} // Close when clicking backdrop
           >
             <motion.div
               className="bg-black/80 border border-white/20 rounded-3xl p-8 max-w-2xl w-full text-white/90 relative shadow-2xl overflow-y-auto max-h-[90vh]"
               variants={popupVariants}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside popup
             >
               <h2 className="text-3xl font-light mb-6 text-white/95 text-center">AI Review</h2>
               
@@ -179,9 +173,7 @@ export default function TaskList({
                   <h3 className="text-xl font-light text-white/95 mb-3 flex items-center">
                     Overall Assessment:
                     {currentReview.overallStatus && (
-                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${
-                        currentReview.overallStatus.toLowerCase().trim() === 'accepted' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                      }`}>
+                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${currentReview.overallStatus.toLowerCase().trim() === 'accepted' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                         {currentReview.overallStatus}
                       </span>
                     )}
@@ -190,7 +182,6 @@ export default function TaskList({
                     <p className="text-white/80">{currentReview.overallAssessment?.feedback || 'No feedback provided.'}</p>
                   </GlassCard>
                 </motion.div>
-
                 <motion.div variants={sectionVariants} initial="hidden" animate="visible" transition={{ delay: 0.1 }}>
                   <h3 className="text-xl font-light text-white/95 mb-3">Code Quality:</h3>
                   <GlassCard className="p-4 bg-black/60 border border-white/10 rounded-2xl">
@@ -205,7 +196,6 @@ export default function TaskList({
                     </ul>
                   </GlassCard>
                 </motion.div>
-
                 <motion.div variants={sectionVariants} initial="hidden" animate="visible" transition={{ delay: 0.2 }}>
                   <h3 className="text-xl font-light text-white/95 mb-3">Documentation:</h3>
                   <GlassCard className="p-4 bg-black/60 border border-white/10 rounded-2xl">
@@ -220,7 +210,6 @@ export default function TaskList({
                     </ul>
                   </GlassCard>
                 </motion.div>
-
                 <motion.div variants={sectionVariants} initial="hidden" animate="visible" transition={{ delay: 0.3 }}>
                   <h3 className="text-xl font-light text-white/95 mb-3">Security Analysis:</h3>
                   <GlassCard className="p-4 bg-black/60 border border-white/10 rounded-2xl">
@@ -246,7 +235,7 @@ export default function TaskList({
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 } 

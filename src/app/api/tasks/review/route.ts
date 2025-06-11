@@ -3,6 +3,8 @@ import axios from 'axios';
 import PDFParser from 'pdf2json';
 import { publicClient } from '@/utils/viem';
 import { contractConfig } from '@/config/contractConfig';
+import { getPaymentService } from '@/utils/paymentService';
+import { X402PaymentHandler } from '@/utils/x402PaymentHandler';
 
 // Validate Akash API key
 function validateAkashKey() {
@@ -114,9 +116,33 @@ export async function POST(request: Request) {
     // Get the file as Buffer
     const fileBuffer = Buffer.from(await ipfsResponse.arrayBuffer());
     
-    // Extract text from PDF
-    console.log('Extracting text from PDF...');
-    let fileContent = await extractTextFromPDF(fileBuffer);
+    // Check if file is PDF by examining magic bytes and content type
+    const contentType = ipfsResponse.headers.get('content-type') || '';
+    const isPDF = contentType.includes('application/pdf') || 
+                  (fileBuffer.length >= 4 && fileBuffer.toString('ascii', 0, 4) === '%PDF');
+    
+    let fileContent: string;
+    
+    if (isPDF) {
+      // Extract text from PDF
+      console.log('Detected PDF file, extracting text...');
+      fileContent = await extractTextFromPDF(fileBuffer);
+    } else {
+      // Handle non-PDF files as text
+      console.log('Non-PDF file detected, reading as text...');
+      try {
+        // Try to read as UTF-8 text
+        fileContent = fileBuffer.toString('utf-8');
+        
+        // If it contains null bytes, it's likely binary
+        if (fileContent.includes('\0')) {
+          fileContent = '[Binary file detected - content extraction not supported]';
+        }
+      } catch (error) {
+        console.error('Error reading file as text:', error);
+        fileContent = '[Error reading file content]';
+      }
+    }
     
     // Limit content size
     if (fileContent.length > MAX_CONTENT_LENGTH) {

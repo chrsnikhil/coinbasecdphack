@@ -1,14 +1,18 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { AgentConfig, initializeModel } from './config';
+import { getPaymentService } from '../utils/paymentService';
+import { X402PaymentHandler } from '../utils/x402PaymentHandler';
 
 export class TaskAgent {
   private model: ChatOpenAI;
   private config: AgentConfig;
+  private paymentHandler: X402PaymentHandler;
 
   constructor(config: AgentConfig) {
     this.config = config;
     this.model = initializeModel(config);
+    this.paymentHandler = new X402PaymentHandler(getPaymentService());
   }
 
   async reviewTaskSubmission(taskId: number, submission: {
@@ -19,7 +23,7 @@ export class TaskAgent {
       fileType: string;
       ipfsHash: string;
     };
-  }) {
+  }, payToAddress?: string) {
     try {
       console.log('Starting task review...');
       console.log('Task ID:', taskId);
@@ -27,6 +31,10 @@ export class TaskAgent {
       console.log('File Name:', submission.submission.fileName);
       console.log('File Type:', submission.submission.fileType);
       console.log('IPFS Hash:', submission.submission.ipfsHash);
+      
+      if (payToAddress) {
+        console.log('Payment address provided:', payToAddress);
+      }
 
       // Create the review prompt
       const reviewPrompt = PromptTemplate.fromTemplate(`
@@ -34,49 +42,67 @@ export class TaskAgent {
 
         Task Description: {taskDescription}
         
+        File Information:
+        - File Name: {fileName}
+        - File Type: {fileType}
+        
         Submission Content:
         {content}
 
-        Please provide a detailed review covering:
-        1. Code Quality and Structure
+        Based on the file type ({fileType}), provide a detailed review covering:
+        1. Quality and Structure (adapt based on file type - e.g., code quality for code files, design quality for images, etc.)
         2. Functionality and Requirements
-        3. Best Practices
-        4. Security Considerations
-        5. Performance
+        3. Best Practices (adapt based on file type)
+        4. Security Considerations (if applicable)
+        5. Performance (if applicable)
         6. Overall Assessment
 
-        Format your response as a JSON object with the following structure:
-        {
-          "codeQuality": {
+        Format your response as a JSON object with the following structure. DO NOT include any comments or extraneous text within the JSON object. The response must be pure JSON.
+        {{
+          "codeQuality": {{
             "score": number,
             "feedback": string
-          },
-          "functionality": {
+          }},
+          "functionality": {{
             "score": number,
             "feedback": string
-          },
-          "bestPractices": {
+          }},
+          "bestPractices": {{
             "score": number,
             "feedback": string
-          },
-          "security": {
+          }},
+          "security": {{
             "score": number,
             "feedback": string
-          },
-          "performance": {
+          }},
+          "performance": {{
             "score": number,
             "feedback": string
-          },
-          "overallAssessment": {
+          }},
+          "overallAssessment": {{
             "score": number,
             "feedback": string
-          }
-        }
+          }},
+          "overallStatus": "accepted" | "rejected"
+        }}
+
+        For non-code files:
+        - For images: Focus on visual quality, composition, and adherence to design requirements
+        - For documents: Focus on content quality, formatting, and clarity
+        - For audio/video: Focus on quality, duration, and technical specifications
+        - For other file types: Adapt the review criteria appropriately
+
+        For code files:
+        - Focus on code quality, structure, and technical implementation
+        - Include security and performance considerations
+        - Evaluate against coding best practices
       `);
 
       // Format the prompt
       const formattedPrompt = await reviewPrompt.format({
         taskDescription: submission.taskDescription,
+        fileName: submission.submission.fileName,
+        fileType: submission.submission.fileType,
         content: submission.submission.content
       });
 
@@ -87,21 +113,74 @@ export class TaskAgent {
       // Parse the review response
       let review;
       try {
-        review = JSON.parse(reviewResponse.content.toString());
+        const rawContent = reviewResponse.content.toString();
+        // Use regex to find a JSON object in the response, specifically looking for ```json ... ```
+        const jsonMatch = rawContent.match(/```json\s*([\s\S]*?)\s*```/);
+        let jsonString = '';
+
+        if (jsonMatch && jsonMatch[1]) {
+          jsonString = jsonMatch[1].trim();
+        } else {
+          // Fallback if no specific JSON block is found, try to parse the whole response (less robust)
+          jsonString = rawContent.trim();
+        }
+
+        review = JSON.parse(jsonString);
       } catch (error) {
         console.error('Failed to parse review response:', error);
         review = {
           error: 'Failed to parse review response',
-          rawResponse: reviewResponse.content
+          rawResponse: reviewResponse.content,
         };
       }
 
+      // Process payment if address is provided and review was successful
+      let paymentResult = null;
+      if (payToAddress && !review.error) {
+        console.log('Processing x402 payment for task review...');
+        try {
+          paymentResult = await this.paymentHandler.payForTaskReview(taskId, payToAddress);
+          console.log('Payment result:', paymentResult);
+        } catch (paymentError) {
+          console.error('Payment failed but review completed:', paymentError);
+          // Don't fail the entire review if payment fails
+        }
+      }
+
       return {
-        review
+        review,
+        payment: paymentResult
       };
     } catch (error) {
       console.error('Error in reviewTaskSubmission:', error);
       throw new Error(`Failed to review task: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
-} 
+
+  /**
+   * Process a payment using the x402 payment handler
+   */
+  async processPayment(taskId: number, amount: string, recipient: string): Promise<{
+    success: boolean;
+    transactionHash?: string;
+    error?: string;
+  }> {
+    try {
+      console.log(`Processing payment for task ${taskId}: ${amount} ETH to ${recipient}`);
+      
+      const result = await this.paymentHandler.createPayment({
+        amount,
+        recipient,
+        description: `Manual payment for task #${taskId}`
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Payment processing failed'
+      };
+    }
+  }
+}

@@ -76,6 +76,7 @@ export async function POST(request: Request) {
         console.log('Task ID:', params.taskId);
         console.log('Task Description:', params.taskDescription);
         console.log('Submission Data:', JSON.stringify(params.submissionData, null, 2));
+        console.log('Payment Address:', params.payToAddress || 'None provided');
 
         // Fetch and analyze file content
         let fileContent = '';
@@ -101,16 +102,37 @@ export async function POST(request: Request) {
           fileContent = `[Error fetching file content: ${error instanceof Error ? error.message : 'Unknown error'}]`;
         }
 
-        // Review the submission
+        // Review the submission with optional payment
         const review = await agent.reviewTaskSubmission(params.taskId, {
           taskDescription: params.taskDescription,
           submission: {
             ...params.submissionData,
             content: fileContent
           }
-        });
+        }, params.payToAddress);
+
+        // Log the review response before returning
+        console.log('Review response to be sent:', JSON.stringify(review, null, 2));
 
         return NextResponse.json({ review });
+
+      case 'processPayment':
+        console.log('\n--- Payment Processing Request ---');
+        console.log('Task ID:', params.taskId);
+        console.log('Amount:', params.amount);
+        console.log('Recipient:', params.recipient);
+
+        try {
+          // Use the agent's payment handler directly
+          const paymentResult = await agent.processPayment(params.taskId, params.amount, params.recipient);
+          return NextResponse.json({ payment: paymentResult });
+        } catch (error) {
+          console.error('Payment processing failed:', error);
+          return NextResponse.json({
+            error: 'Payment processing failed',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }, { status: 500 });
+        }
 
       default:
         throw new Error(`Unknown action: ${action}`);
