@@ -477,11 +477,15 @@ export default function Home() {
     visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
   };
 
-  const handleTaskCreated = async () => {
+  const handleTaskCreated = useCallback(async () => {
     setLoading(true);
-    await fetchCount();
-    refetchTasksHook();
-  };
+    try {
+      await fetchCount();
+      refetchTasksHook();
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchCount, refetchTasksHook, setLoading]);
 
   const [showAllTasksPopup, setShowAllTasksPopup] = useState(false);
   const [showAIReviewsPopup, setShowAIReviewsPopup] = useState(false);
@@ -503,7 +507,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 py-8">
           {isConnected && (
             <div className="mb-8 text-center">
-              <CreateTask />
+              <CreateTask onTaskCreated={handleTaskCreated} />
               <div className="flex justify-center gap-4 mt-4 mb-6">
                 <Button
                   onClick={() => setShowAllTasksPopup(true)}

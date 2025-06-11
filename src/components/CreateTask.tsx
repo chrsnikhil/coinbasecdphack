@@ -23,7 +23,11 @@ interface Task {
   submittedFileCID: string;
 }
 
-export function CreateTask() {
+interface CreateTaskProps {
+  onTaskCreated?: () => void;
+}
+
+export function CreateTask({ onTaskCreated }: CreateTaskProps) {
   const { address, isConnected } = useAccount();
   const [taskName, setTaskName] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
@@ -70,6 +74,11 @@ export function CreateTask() {
       setIsSubmitting(false); // Only reset isSubmitting here
       setCurrentToastId(undefined);
       setHasShownSuccessToast(true); // Mark that we've shown the success toast
+      
+      // Call the callback to update the task list
+      if (onTaskCreated) {
+        onTaskCreated();
+      }
     }
     // Handle failure toast (transaction completed, but not successfully)
     else if (!isTransactionPending && writeContractData && !isTransactionSuccess) {
@@ -85,7 +94,7 @@ export function CreateTask() {
       if (currentToastId) toast.dismiss(currentToastId);
       setCurrentToastId(undefined);
     }
-  }, [isTransactionPending, isTransactionSuccess, writeContractData, currentToastId, hasShownSuccessToast]);
+  }, [isTransactionPending, isTransactionSuccess, writeContractData, currentToastId, hasShownSuccessToast, onTaskCreated]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
