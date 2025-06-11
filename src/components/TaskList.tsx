@@ -228,9 +228,19 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
 
     if (task.isCompleted) {
       return (
-        <Button disabled className="w-full bg-green-500/10 text-green-400/80 backdrop-blur-md border border-green-500/20 rounded-2xl px-6 py-3 font-light">
-          Completed
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button disabled className="w-full bg-green-500/10 text-green-400/80 backdrop-blur-md border border-green-500/20 rounded-2xl px-6 py-3 font-light">
+            Completed
+          </Button>
+          {task.submittedFileCID && address === task.creator && (
+            <Button
+              onClick={() => window.open(`https://ipfs.io/ipfs/${task.submittedFileCID}`, '_blank')}
+              className="w-full bg-blue-500/10 text-blue-400/80 backdrop-blur-md border border-blue-500/20 rounded-2xl px-6 py-3 font-light"
+            >
+              View Submission
+            </Button>
+          )}
+        </div>
       );
     }
 
