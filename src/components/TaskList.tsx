@@ -16,6 +16,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { publicClient, walletClient } from "@/utils/viem";
 import GlassCard from '@/components/GlassCard';
 import { ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Task {
   id: number;
@@ -43,6 +44,8 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [currentToastId, setCurrentToastId] = useState<string | undefined>(undefined);
+  const [showReviewPopup, setShowReviewPopup] = useState(false);
+  const [currentReview, setCurrentReview] = useState<any>(null);
 
   const { isLoading: isTransactionPending, isSuccess: isTransactionSuccess } = useWaitForTransactionReceipt({
     hash: pendingTxHash,
@@ -136,16 +139,20 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
       let agentData;
       try {
         agentData = await agentResponse.json();
-        console.log('Parsed AI Agent Response:', agentData); // Log the parsed response
-        console.log('Content of agentData.review:', agentData.review); // Added for debugging
+        console.log('Parsed AI Agent Response:', agentData);
+        console.log('Content of agentData.review:', agentData.review);
       } catch (e) {
         const rawText = await agentResponse.text();
         console.error('Failed to parse AI agent JSON response. Raw text:', rawText, 'Error:', e);
         throw new Error('Failed to parse AI agent review response: ' + (e instanceof Error ? e.message : 'Unknown parsing error') + '. Raw response: ' + rawText.substring(0, 100) + '...');
       }
       
-      const reviewStatus = agentData.review?.review?.overallStatus; // Use overallStatus as per AI agent prompt
+      const reviewStatus = agentData.review?.review?.overallStatus;
       const reviewMessage = agentData.review?.review?.overallAssessment?.feedback || agentData.review?.review?.message || 'Review result unknown.';
+
+      // Show review popup
+      setCurrentReview(agentData.review?.review);
+      setShowReviewPopup(true);
 
       if (reviewStatus && reviewStatus.toLowerCase().trim() === 'accepted') {
         toast.loading('AI review accepted. Submitting transaction...', { id: toastId });
@@ -374,6 +381,106 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
         <CarouselPrevious className="left-4" />
         <CarouselNext className="right-4" />
       </Carousel>
+
+      {/* AI Review Popup */}
+      <AnimatePresence>
+        {showReviewPopup && currentReview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 max-w-lg w-full mx-4"
+            >
+              <div className="space-y-4">
+                <div className="flex justify-between items-start">
+                  <motion.h3 
+                    initial={{ y: -20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.1 }}
+                    className="text-xl font-light text-white"
+                  >
+                    AI Review Results
+                  </motion.h3>
+                  <motion.button
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.2 }}
+                    whileHover={{ scale: 1.1 }}
+                    onClick={() => setShowReviewPopup(false)}
+                    className="text-white/60 hover:text-white"
+                  >
+                    ×
+                  </motion.button>
+                </div>
+                
+                <div className="space-y-4">
+                  <motion.div
+                    initial={{ x: -20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="p-4 rounded-xl bg-black/60 border border-white/5"
+                  >
+                    <h4 className="text-lg font-light text-white mb-2">Overall Assessment</h4>
+                    <p className="text-white/90">{currentReview.overallAssessment?.feedback || 'No feedback provided'}</p>
+                  </motion.div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <motion.div
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.3 }}
+                      className="p-4 rounded-xl bg-black/60 border border-white/5"
+                    >
+                      <h4 className="text-lg font-light text-white mb-2">Code Quality</h4>
+                      <p className="text-white/90">{currentReview.codeQuality?.feedback || 'No feedback provided'}</p>
+                    </motion.div>
+                    <motion.div
+                      initial={{ x: 20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.3 }}
+                      className="p-4 rounded-xl bg-black/60 border border-white/5"
+                    >
+                      <h4 className="text-lg font-light text-white mb-2">Documentation</h4>
+                      <p className="text-white/90">{currentReview.documentation?.feedback || 'No feedback provided'}</p>
+                    </motion.div>
+                  </div>
+
+                  <motion.div
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.4 }}
+                    className="p-4 rounded-xl bg-black/60 border border-white/5"
+                  >
+                    <h4 className="text-lg font-light text-white mb-2">Security Analysis</h4>
+                    <p className="text-white/90">{currentReview.securityAnalysis?.feedback || 'No feedback provided'}</p>
+                  </motion.div>
+                </div>
+
+                <motion.div 
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.5 }}
+                  className="flex justify-end"
+                >
+                  <Button
+                    onClick={() => setShowReviewPopup(false)}
+                    className="bg-white/20 hover:bg-white/30 text-white px-6 py-2 rounded-xl font-light transition-all duration-200"
+                  >
+                    Close
+                  </Button>
+                </motion.div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 } 
