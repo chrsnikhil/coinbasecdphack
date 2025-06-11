@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@coinbase/agentkit": "^0.8.1",
+    "@coinbase/agentkit": "^0.1.2",
     "@coinbase/onchainkit": "^0.38.13",
     "@coinbase/x402": "^0.3.8",
     "@langchain/core": "^0.3.57",
