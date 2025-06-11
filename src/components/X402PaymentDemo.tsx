@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { useAccount } from 'wagmi';
 import { toast } from 'sonner';
@@ -8,7 +8,12 @@ import { toast } from 'sonner';
 export function X402PaymentDemo() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string>('');
+  const [mounted, setMounted] = useState(false);
   const { address, isConnected } = useAccount();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const testAgentPayment = async () => {
     if (!isConnected || !address) {
@@ -132,6 +137,10 @@ export function X402PaymentDemo() {
       setIsLoading(false);
     }
   };
+
+  if (!mounted) {
+    return null; // Return null on server-side and first render
+  }
 
   return (
     <div className="p-6 border rounded-lg bg-white shadow-lg">

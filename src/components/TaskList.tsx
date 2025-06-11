@@ -14,6 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import toast, { Toaster } from 'react-hot-toast';
 import { publicClient, walletClient } from "@/utils/viem";
+import GlassCard from '@/components/GlassCard';
+import { ArrowRight } from 'lucide-react';
 
 interface Task {
   id: number;
@@ -35,15 +37,12 @@ interface TaskListProps {
 
 export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
   const { address, isConnected } = useAccount();
+  const { writeContract } = useWriteContract();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [currentToastId, setCurrentToastId] = useState<string | undefined>(undefined);
-  const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>();
-  const [submittingTaskId, setSubmittingTaskId] = useState<number | null>(null);
-  const [applyingTaskId, setApplyingTaskId] = useState<number | null>(null);
-
-  const { writeContract } = useWriteContract();
 
   const { isLoading: isTransactionPending, isSuccess: isTransactionSuccess } = useWaitForTransactionReceipt({
     hash: pendingTxHash,
@@ -51,54 +50,148 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
 
   useEffect(() => {
     if (isTransactionSuccess) {
-      refetchTasks();
-      setPendingTxHash(undefined);
+      setLoading(false);
       setSelectedFile(null);
-      setApplyingTaskId(null);
+      setPendingTxHash(undefined);
       if (currentToastId) toast.dismiss(currentToastId);
-      toast.success('Transaction confirmed successfully!', { duration: 3000 });
+      toast.success('Task submitted for review!', { duration: 3000 });
       setCurrentToastId(undefined);
+      refetchTasks();
     }
-  }, [isTransactionSuccess, refetchTasks]);
+  }, [isTransactionSuccess, refetchTasks, currentToastId]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-      setError(null);
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
+    } else {
+      setSelectedFile(null);
     }
   };
 
-  const handleApply = async (taskId: number) => {
-    if (!address) {
-      toast.error('Please connect your wallet first');
+  const handleSubmitCompletion = async (taskId: number) => {
+    if (!selectedFile) {
+      toast.error('Please select a file to submit.', { duration: 3000 });
       return;
     }
-    
+
+    setLoading(true);
+    setError(null);
+    const toastId = toast.loading('Uploading file to IPFS...');
+    setCurrentToastId(toastId);
+
     try {
-      setError(null);
-      setApplyingTaskId(taskId);
-      const toastId = toast.loading('Applying for task...');
-      setCurrentToastId(toastId);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
 
-      // First check if task is still available
-      const task = tasks.find(t => t.id === taskId);
-      if (!task) {
-        throw new Error('Task not found');
-      }
-      if (!task.isActive) {
-        throw new Error('Task is not active');
-      }
-      if (task.worker !== '0x0000000000000000000000000000000000000000') {
-        throw new Error('Task already has a worker');
-      }
-      if (task.creator === address) {
-        throw new Error('You cannot accept your own task');
+      const pinataResponse = await fetch('/api/pinata/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!pinataResponse.ok) {
+        const errorData = await pinataResponse.json();
+        throw new Error(errorData.message || 'Failed to upload file to IPFS');
       }
 
-      // Use the writeContract function from the hook
+      const pinataData = await pinataResponse.json();
+      const ipfsCid = pinataData.ipfsHash;
+      toast.loading('File uploaded. Sending for AI review...', { id: toastId });
+
+      // Find the task for description and title
+      const taskToReview = tasks.find(task => task.id === taskId);
+      if (!taskToReview) {
+        throw new Error('Task not found for review.');
+      }
+
+      const agentResponse = await fetch('/api/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'reviewTask',
+          params: {
+            taskId: Number(taskId),
+            taskDescription: taskToReview.description,
+            submissionData: {
+              ipfsHash: ipfsCid,
+              fileName: selectedFile.name,
+              fileType: selectedFile.type,
+              fileSize: selectedFile.size,
+            },
+          },
+        }),
+      });
+
+      if (!agentResponse.ok) {
+        let errorData = { message: 'AI agent review failed' };
+        try {
+          errorData = await agentResponse.json();
+        } catch (e) {
+          console.error('Failed to parse AI agent error response:', e);
+        }
+        throw new Error(errorData.message);
+      }
+
+      let agentData;
+      try {
+        agentData = await agentResponse.json();
+        console.log('Parsed AI Agent Response:', agentData); // Log the parsed response
+        console.log('Content of agentData.review:', agentData.review); // Added for debugging
+      } catch (e) {
+        const rawText = await agentResponse.text();
+        console.error('Failed to parse AI agent JSON response. Raw text:', rawText, 'Error:', e);
+        throw new Error('Failed to parse AI agent review response: ' + (e instanceof Error ? e.message : 'Unknown parsing error') + '. Raw response: ' + rawText.substring(0, 100) + '...');
+      }
+      
+      const reviewStatus = agentData.review?.review?.overallStatus; // Use overallStatus as per AI agent prompt
+      const reviewMessage = agentData.review?.review?.overallAssessment?.feedback || agentData.review?.review?.message || 'Review result unknown.';
+
+      if (reviewStatus && reviewStatus.toLowerCase().trim() === 'accepted') {
+        toast.loading('AI review accepted. Submitting transaction...', { id: toastId });
+
+        writeContract({
+          ...contractConfig,
+          functionName: 'submitTaskCompletion',
+          args: [BigInt(taskId), ipfsCid],
+        }, {
+          onSuccess: (hash) => {
+            setPendingTxHash(hash);
+            toast.loading('Confirming transaction...', { id: toastId });
+          },
+          onError: (err) => {
+            setError(err.message);
+            setLoading(false);
+            toast.error(`Failed to submit task: ${err.message}`, { id: toastId, duration: 3000 });
+            setCurrentToastId(undefined);
+          }
+        });
+      } else {
+        throw new Error(`AI review rejected: ${reviewMessage}`);
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit completion');
+      setLoading(false);
+      toast.error(`Submission failed: ${err instanceof Error ? err.message : 'Unknown error'}`, { duration: 5000, id: currentToastId });
+      setCurrentToastId(undefined);
+    }
+  };
+
+  const handleAcceptTask = async (taskId: number, bounty: bigint) => {
+    if (!address) {
+      toast.error('Please connect your wallet to accept a task.', { duration: 3000 });
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const toastId = toast.loading('Accepting task...');
+    setCurrentToastId(toastId);
+
+    try {
       writeContract({
-        address: contractConfig.address,
-        abi: contractConfig.abi,
+        ...contractConfig,
         functionName: 'acceptTask',
         args: [BigInt(taskId)],
       }, {
@@ -107,119 +200,17 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
           toast.loading('Confirming transaction...', { id: toastId });
         },
         onError: (err) => {
-          console.error('Error applying for task:', err);
-          const errorMessage = err instanceof Error ? err.message : 'Failed to apply for task';
-          setError(errorMessage);
-          toast.error(errorMessage, { id: toastId, duration: 3000 });
-          setApplyingTaskId(null);
-          setPendingTxHash(undefined);
+          setError(err.message);
+          setLoading(false);
+          toast.error(`Failed to accept task: ${err.message}`, { id: toastId, duration: 3000 });
+          setCurrentToastId(undefined);
         }
       });
     } catch (err) {
-      console.error('Error applying for task:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to apply for task';
-      setError(errorMessage);
-      toast.error(errorMessage, { id: currentToastId, duration: 3000 });
-      setApplyingTaskId(null);
-      setPendingTxHash(undefined);
-    }
-  };
-
-  const handleSubmitCompletion = async (taskId: number) => {
-    if (!selectedFile) {
-      setError('Please select a file to upload');
-      return;
-    }
-
-    if (!address) {
-      toast.error('Please connect your wallet first');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      const toastId = toast.loading('Submitting task...');
-      setCurrentToastId(toastId);
-
-      // 1. Upload to IPFS
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      const uploadResponse = await fetch('/api/pinata/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
-      }
-
-      const { ipfsHash } = await uploadResponse.json();
-      if (!ipfsHash) {
-        throw new Error('No IPFS hash received');
-      }
-
-      toast.loading('Getting AI review...', { id: toastId });
-
-      // 2. Get AI review
-      const reviewResponse = await fetch('/api/tasks/review', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          taskId,
-          ipfsHash,
-          account: address,
-        }),
-      });
-
-      if (!reviewResponse.ok) {
-        throw new Error('Failed to get review');
-      }
-
-      const reviewData = await reviewResponse.json();
-      if (!reviewData.approved) {
-        toast.error(`Review not approved: ${reviewData.feedback}`, { id: toastId });
-        setError(`Review not approved: ${reviewData.feedback}`);
-        return;
-      }
-
-      toast.loading('Submitting to blockchain...', { id: toastId });
-
-      // 3. Submit to contract
-      writeContract({
-        address: contractConfig.address,
-        abi: contractConfig.abi,
-        functionName: 'submitTaskCompletion',
-        args: [BigInt(taskId), ipfsHash],
-      }, {
-        onSuccess: (hash) => {
-          setPendingTxHash(hash);
-          toast.loading('Confirming transaction...', { id: toastId });
-        },
-        onError: (err) => {
-          console.error('Error submitting task completion:', err);
-          const errorMessage = err instanceof Error ? err.message : 'Failed to submit task completion';
-          setError(errorMessage);
-          toast.error(errorMessage, { id: toastId, duration: 3000 });
-          setSubmittingTaskId(null);
-          setPendingTxHash(undefined);
-        }
-      });
-
-      // Refresh task list
-      await refetchTasks();
-      setSelectedFile(null);
-      setError(null);
-      toast.success('Task submitted successfully!', { id: toastId });
-    } catch (err) {
-      console.error('Error submitting task:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit task');
-      toast.error(err instanceof Error ? err.message : 'Failed to submit task', { duration: 3000 });
-    } finally {
+      setError(err instanceof Error ? err.message : 'Failed to accept task');
       setLoading(false);
+      toast.error('Failed to accept task', { duration: 3000 });
+      setCurrentToastId(undefined);
     }
   };
 
@@ -228,7 +219,7 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
       return (
         <Button
           onClick={() => window.ethereum.request({ method: 'eth_requestAccounts' })}
-          className="w-full bg-white text-black hover:bg-zinc-200"
+          className="w-full bg-white/15 backdrop-blur-2xl text-white hover:bg-white/25 text-lg px-10 py-6 border border-white/40 rounded-2xl font-light"
         >
           Connect Wallet
         </Button>
@@ -237,7 +228,7 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
 
     if (task.isCompleted) {
       return (
-        <Button disabled className="w-full bg-green-500/20 text-green-400 border border-green-500/20">
+        <Button disabled className="w-full bg-green-500/10 text-green-400/80 backdrop-blur-md border border-green-500/20 rounded-2xl px-6 py-3 font-light">
           Completed
         </Button>
       );
@@ -245,7 +236,7 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
 
     if (!task.isActive) {
       return (
-        <Button disabled className="w-full bg-zinc-800 text-zinc-400">
+        <Button disabled className="w-full bg-red-500/10 text-red-400/80 backdrop-blur-md border border-red-500/20 rounded-2xl px-6 py-3 font-light">
           Task Inactive
         </Button>
       );
@@ -253,99 +244,126 @@ export default function TaskList({ tasks, refetchTasks }: TaskListProps) {
 
     if (task.worker === address) {
       return (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="space-y-2">
             <input
               type="file"
               onChange={handleFileChange}
-              className="w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-zinc-800 file:text-white hover:file:bg-zinc-700"
+              className="w-full text-base font-light text-white/70 file:mr-4 file:py-3 file:px-6 file:rounded-2xl file:border file:border-white/20 file:text-base file:font-light file:bg-white/10 file:text-white/80 hover:file:bg-white/20 focus:outline-none"
             />
             {error && <p className="text-red-500 text-sm">{error}</p>}
           </div>
           <Button
             onClick={() => handleSubmitCompletion(task.id)}
-            disabled={!selectedFile || loading}
-            className="w-full bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!selectedFile || loading || isTransactionPending}
+            className={`w-full bg-white/15 backdrop-blur-2xl text-white text-lg px-10 py-6 border border-white/40 rounded-2xl font-light ${
+              (!selectedFile || loading || isTransactionPending)
+                ? 'opacity-50 cursor-not-allowed'
+                : 'hover:bg-white/25'
+            }`}
           >
-            {loading ? 'Submitting...' : 'Submit Completion'}
+            {loading || isTransactionPending ? 'Submitting...' : 'Submit Completion'}
+            <ArrowRight className="ml-3 w-5 h-5" />
           </Button>
         </div>
       );
     }
 
-    if (task.worker === '0x0000000000000000000000000000000000000000') {
+    if (task.creator === address) {
       return (
-        <Button
-          onClick={() => handleApply(task.id)}
-          disabled={applyingTaskId === task.id || task.creator === address}
-          className="w-full bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {applyingTaskId === task.id ? 'Applying...' : 'Apply for Task'}
+        <Button disabled className="w-full bg-blue-500/10 text-blue-400/80 backdrop-blur-md border border-blue-500/20 rounded-2xl px-6 py-3 font-light">
+          Awaiting Worker Submission
         </Button>
       );
     }
 
     return (
-      <Button disabled className="w-full bg-zinc-800 text-zinc-400">
-        Task Assigned
+      <Button
+        onClick={() => handleAcceptTask(task.id, task.bounty)}
+        disabled={loading || isTransactionPending}
+        className={`w-full bg-white/15 backdrop-blur-2xl text-white hover:bg-white/25 text-lg px-10 py-6 border border-white/40 rounded-2xl font-light ${
+          (loading || isTransactionPending)
+            ? 'opacity-50 cursor-not-allowed'
+            : 'hover:bg-white/25'
+        }`}
+      >
+        {loading || isTransactionPending ? 'Accepting Task...' : 'Accept Task'}
+        <ArrowRight className="ml-3 w-5 h-5" />
       </Button>
     );
   };
 
   return (
     <div className="w-full">
-      <Carousel className="w-full">
-        <CarouselContent>
+      <Toaster position="top-left" toastOptions={{
+        style: {
+          background: '#000',
+          color: '#fff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+        },
+        success: {
+          iconTheme: {
+            primary: '#10B981',
+            secondary: '#fff',
+          },
+        },
+      }} />
+      
+      <Carousel
+        opts={{
+          align: "start",
+          loop: true,
+        }}
+        className="w-full"
+      >
+        <CarouselContent className="-ml-4">
           {tasks.map((task) => (
             <CarouselItem key={task.id} className="pl-4 md:basis-1/2 lg:basis-1/3">
-              <div className="bg-black/90 backdrop-blur-sm rounded-lg p-6 border border-white/10 hover:border-white/20 transition-all duration-300 h-full flex flex-col shadow-lg">
-                <div className="flex-grow">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xl font-semibold line-clamp-1 text-white">{task.title}</h3>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        task.isCompleted 
-                          ? 'bg-green-500/20 text-green-400 border border-green-500/20'
-                          : !task.isActive
-                            ? 'bg-red-500/20 text-red-400 border border-red-500/20'
-                            : task.worker && task.worker !== '0x0000000000000000000000000000000000000000'
-                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/20'
-                              : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/20'
-                      }`}>
-                        {task.isCompleted ? 'Completed' : !task.isActive ? 'Inactive' : task.worker && task.worker !== '0x0000000000000000000000000000000000000000' ? 'In Progress' : 'Open'}
-                      </span>
+              <GlassCard className="h-full p-6">
+                <div className="flex flex-col h-full">
+                  <div className="flex-1 space-y-4">
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-light text-white/90">{task.title}</h3>
+                      <p className="text-sm text-white/60 line-clamp-3">{task.description}</p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-white/60">Bounty:</span>
+                        <span className="text-white/90">{formatEther(task.bounty)} ETH</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-white/60">Status:</span>
+                        <span className={`${
+                          task.isCompleted ? 'text-green-400/80' :
+                          task.isActive ? 'text-blue-400/80' :
+                          'text-red-400/80'
+                        }`}>
+                          {task.isCompleted ? 'Completed' :
+                           task.isActive ? 'Active' :
+                           'Inactive'}
+                        </span>
+                      </div>
+                      {task.requiredFileTypes.length > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-white/60">Required Files:</span>
+                          <span className="text-white/90">{task.requiredFileTypes.join(', ')}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <p className="text-zinc-300 mb-4 line-clamp-2">{task.description}</p>
-                  <div className="flex flex-col gap-2 text-sm text-zinc-400">
-                    <span className="flex items-center gap-1">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {task.bounty} ETH
-                    </span>
-                    {task.worker && task.worker !== '0x0000000000000000000000000000000000000000' && (
-                      <span className="flex items-center gap-1">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        Worker: {task.worker.slice(0, 6)}...{task.worker.slice(-4)}
-                      </span>
-                    )}
+                  
+                  <div className="mt-6">
+                    {renderTaskActions(task)}
                   </div>
                 </div>
-
-                <div className="mt-6">
-                  {renderTaskActions(task)}
-                </div>
-              </div>
+              </GlassCard>
             </CarouselItem>
           ))}
         </CarouselContent>
-        <CarouselPrevious />
-        <CarouselNext />
+        <CarouselPrevious className="left-4" />
+        <CarouselNext className="right-4" />
       </Carousel>
-      <Toaster position="bottom-right" />
     </div>
   );
 } 

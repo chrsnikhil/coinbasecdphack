@@ -53,7 +53,7 @@ export class TaskAgent {
         5. Performance
         6. Overall Assessment
 
-        Format your response as a JSON object with the following structure:
+        Format your response as a JSON object with the following structure. DO NOT include any comments or extraneous text within the JSON object. The response must be pure JSON.
         {{
           "codeQuality": {{
             "score": number,
@@ -78,7 +78,8 @@ export class TaskAgent {
           "overallAssessment": {{
             "score": number,
             "feedback": string
-          }}
+          }},
+          "overallStatus": "accepted" | "rejected"
         }}
       `);
 
@@ -95,12 +96,24 @@ export class TaskAgent {
       // Parse the review response
       let review;
       try {
-        review = JSON.parse(reviewResponse.content.toString());
+        const rawContent = reviewResponse.content.toString();
+        // Use regex to find a JSON object in the response, specifically looking for ```json ... ```
+        const jsonMatch = rawContent.match(/```json\s*([\s\S]*?)\s*```/);
+        let jsonString = '';
+
+        if (jsonMatch && jsonMatch[1]) {
+          jsonString = jsonMatch[1].trim();
+        } else {
+          // Fallback if no specific JSON block is found, try to parse the whole response (less robust)
+          jsonString = rawContent.trim();
+        }
+
+        review = JSON.parse(jsonString);
       } catch (error) {
         console.error('Failed to parse review response:', error);
         review = {
           error: 'Failed to parse review response',
-          rawResponse: reviewResponse.content
+          rawResponse: reviewResponse.content,
         };
       }
 

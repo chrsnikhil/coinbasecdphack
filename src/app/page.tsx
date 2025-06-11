@@ -1,13 +1,13 @@
-'use client';
-
+"use client";
+import { useAccount, useReadContracts } from 'wagmi';
+import { useEffect, useState, useMemo } from 'react';
+import { publicClient } from '@/utils/viem';
+import { contractConfig } from '@/config/contractConfig';
 import TaskList from '@/components/TaskList';
 import CreateTask from '@/components/CreateTask';
-import { useReadContract, useReadContracts, useConnect, useAccount } from 'wagmi';
-import { contractConfig } from '@/config/contractConfig';
-import { useState, useEffect } from 'react';
+import AnimatedBackground from '@/components/AnimatedBackground';
+import GlassCursor from '@/components/GlassCursor';
 import { WalletConnect } from '@/components/WalletConnect';
-import { AgentTest } from '@/components/AgentTest';
-import { X402PaymentDemo } from '@/components/X402PaymentDemo';
 
 interface Task {
   id: number;
@@ -25,72 +25,133 @@ interface Task {
 export default function Home() {
   const { isConnected } = useAccount();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [taskCount, setTaskCount] = useState<number | undefined>(undefined);
 
-  const { data: taskCount } = useReadContract({
-    ...contractConfig,
-    functionName: 'taskCount',
-  });
-
-  const taskIds = Array.from({ length: Number(taskCount || 0) }, (_, i) => i);
-  const taskContracts = taskIds.map((id) => ({
-    ...contractConfig,
-    functionName: 'getTask',
-    args: [BigInt(id)],
-  }));
-
-  const { data: tasksData } = useReadContracts({
-    contracts: taskContracts,
-  });
-
+  // Fetch task count separately
   useEffect(() => {
-    if (tasksData) {
-      const formattedTasks = tasksData.map((task: any, index) => ({
-        id: taskIds[index],
-        creator: task.result[0],
-        title: task.result[1],
-        description: task.result[2],
-        bounty: task.result[3],
-        worker: task.result[4],
-        isCompleted: task.result[5],
-        isActive: task.result[6],
-        requiredFileTypes: task.result[7],
-        submittedFileCID: task.result[8],
-      }));
-      setTasks(formattedTasks);
-      setIsLoading(false);
-    }
-  }, [tasksData]);
+    const fetchCount = async () => {
+      try {
+        const count = await publicClient.readContract({
+          ...contractConfig,
+          functionName: 'taskCount',
+        });
+        setTaskCount(Number(count));
+      } catch (error) {
+        console.error('Error fetching task count:', error);
+        setTaskCount(0); // Assume 0 if count fetch fails
+      }
+    };
+    fetchCount();
+  }, []);
 
-  const refetchTasks = () => {
-    setIsLoading(true);
-    // The tasks will be automatically refetched when taskCount changes
+  // Prepare contracts for useReadContracts hook
+  const contracts = useMemo(() => {
+    if (taskCount === undefined) return [];
+    return Array.from({ length: taskCount }, (_, i) => ({
+      ...contractConfig,
+      functionName: 'getTask',
+      args: [BigInt(i)],
+    }));
+  }, [taskCount]);
+
+  const { data: fetchedTasksData, isLoading: isFetchingTasks, isError: isFetchingError, refetch: refetchTasksHook } = useReadContracts({
+    contracts,
+    query: {
+      enabled: taskCount !== undefined, // Only enable if taskCount is known
+      select: (data) => {
+        const formatted = data.map((taskResult, index) => {
+          if (taskResult.status === 'success' && taskResult.result) {
+            const [
+              creator,
+              title,
+              description,
+              bounty,
+              worker,
+              isCompleted,
+              isActive,
+              requiredFileTypes,
+              submittedFileCID,
+            ] = taskResult.result as [
+              string,
+              string,
+              string,
+              bigint,
+              string,
+              boolean,
+              boolean,
+              string[],
+              string,
+            ];
+
+            const task: Task = {
+              id: index,
+              creator,
+              title,
+              description,
+              bounty,
+              worker,
+              isCompleted,
+              isActive,
+              requiredFileTypes,
+              submittedFileCID,
+            };
+            return task;
+          }
+          console.warn(`Failed to fetch task at index ${index}:`, taskResult.error);
+          return null;
+        }).filter(Boolean) as Task[];
+        return formatted;
+      },
+    },
+    onError: (err) => {
+      console.error('Error fetching tasks with useReadContracts:', err);
+    }
+  });
+
+  // Sync state with fetched data
+  useEffect(() => {
+    setLoading(isFetchingTasks);
+    if (fetchedTasksData) {
+      setTasks(fetchedTasksData);
+    } else if (isFetchingError) {
+      setTasks([]); // Clear tasks on error
+    }
+  }, [fetchedTasksData, isFetchingTasks, isFetchingError]);
+
+  const handleTaskCreated = () => {
+    setLoading(true);
+    refetchTasksHook(); // Use the refetch from useReadContracts
   };
 
   return (
-    <main className="min-h-screen bg-zinc-900 text-white">
-      <div className="container mx-auto py-8">
-        <h1 className="text-3xl font-bold mb-8">Freelance Platform</h1>
-        
-        {/* Add Agent Test Panel */}
-        <div className="mb-8">
-          <AgentTest />
-        </div>
-
-        {/* Add X402 Payment Demo */}
-        <div className="mb-8">
-          <X402PaymentDemo />
-        </div>
-
-        <div className="flex justify-between items-center mb-8">
+    <main className="relative min-h-screen">
+      <AnimatedBackground />
+      <GlassCursor />
+      
+      {/* Header with Wallet Connect */}
+      <header className="fixed top-0 left-0 right-0 z-50 p-4">
+        <div className="max-w-7xl mx-auto flex justify-end">
           <WalletConnect />
         </div>
+      </header>
 
-        <section className="w-full max-w-7xl space-y-12 mb-12">
-          <CreateTask onTaskCreated={refetchTasks} />
-          <TaskList tasks={tasks} refetchTasks={refetchTasks} />
-        </section>
+      {/* Main Content */}
+      <div className="relative z-10 pt-20">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          {isConnected && (
+            <div className="mb-8">
+              <CreateTask onTaskCreated={handleTaskCreated} />
+            </div>
+          )}
+          
+          {loading ? (
+            <div className="text-center text-white/60">Loading tasks...</div>
+          ) : (
+            <TaskList tasks={tasks} refetchTasks={handleTaskCreated} />
+          )}
         </div>
-      </main>
+      </div>
+    </main>
   );
 }

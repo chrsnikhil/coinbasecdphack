@@ -46,6 +46,33 @@ const nextConfig = {
   },
   // Add this to handle ES modules
   transpilePackages: ['@coinbase/agentkit'],
+  // Add headers configuration
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+        ],
+      },
+    ];
+  },
+  // Add experimental features
+  experimental: {
+    serverActions: {},
+  },
+  // Add rewrites to handle 404s
+  async rewrites() {
+    return [
+      {
+        source: '/:path*',
+        destination: '/',
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig; 

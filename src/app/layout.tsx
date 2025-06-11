@@ -10,8 +10,13 @@ import { baseSepolia } from 'wagmi/chains';
 import { Providers } from './providers';
 import { headers } from 'next/headers';
 import { Toaster } from 'react-hot-toast';
+import GlassCursor from '@/components/GlassCursor';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500"],
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   title: 'Freelance Platform',
@@ -29,11 +34,12 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.className} bg-black text-white`}>
         <Providers initialState={initialState}>
-        {children}
-          <Toaster position="top-right" />
+          {children}
+          <Toaster position="top-left" />
         </Providers>
+        <GlassCursor />
       </body>
     </html>
   );

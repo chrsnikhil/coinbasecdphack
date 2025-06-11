@@ -111,6 +111,9 @@ export async function POST(request: Request) {
           }
         }, params.payToAddress);
 
+        // Log the review response before returning
+        console.log('Review response to be sent:', JSON.stringify(review, null, 2));
+
         return NextResponse.json({ review });
 
       case 'processPayment':
