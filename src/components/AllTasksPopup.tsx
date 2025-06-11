@@ -115,22 +115,22 @@ export default function AllTasksPopup({
             <div className="grid grid-cols-1 gap-8 p-1">
               {tasks.map((task) => (
                 <GlassCard key={task.id} className="flex flex-col justify-between p-8 w-full text-white/90 border border-white/10 rounded-3xl" hoverEffect={true}>
-                  <div className="flex flex-col md:flex-row md:space-x-8">
-                    <div className="md:w-2/3">
-                      <h3 className="text-2xl font-light mb-3 flex items-center justify-between">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-start md:space-x-8">
+                    <div className="md:flex-grow">
+                      <h3 className="text-2xl font-light mb-3 flex flex-wrap items-center justify-between gap-2">
                         {task.title}
                         <div className="flex items-center space-x-2">
                           {task.isCompleted && (
-                            <span className="ml-2 text-green-400 text-sm font-medium bg-green-500/10 px-3 py-1 rounded-full">Completed</span>
+                            <span className="text-green-400 text-sm font-medium bg-green-500/10 px-3 py-1 rounded-full">Completed</span>
                           )}
                           {task.isActive && !task.isCompleted && (
-                            <span className="ml-2 text-blue-400 text-sm font-medium bg-blue-500/10 px-3 py-1 rounded-full">Active</span>
+                            <span className="text-blue-400 text-sm font-medium bg-blue-500/10 px-3 py-1 rounded-full">Active</span>
                           )}
                         </div>
                       </h3>
                       <p className="text-white/70 text-base mb-4 line-clamp-4 leading-relaxed">{task.description}</p>
                     </div>
-                    <div className="md:w-1/3 mt-4 md:mt-0">
+                    <div className="md:w-60 md:flex-shrink-0 mt-4 md:mt-0">
                       <div className="text-base space-y-2">
                         <p><span className="font-light text-white/60">Bounty:</span> <span className="font-medium">{formatEther(task.bounty)} ETH</span></p>
                         <p><span className="font-light text-white/60">Creator:</span> <span className="font-medium line-clamp-1 break-all">{task.creator}</span></p>
