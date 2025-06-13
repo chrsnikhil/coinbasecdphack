@@ -7,8 +7,8 @@
 
 ## 🌐 Live Demo
 
-- 🖥️ **Frontend**: [work-proof-eight.vercel.app](https://work-proof-eight.vercel.app/)
-- 🧠 **Blockchain + Backend**: [coinbasecdphack.vercel.app](https://coinbasecdphack.vercel.app/)
+- 🖥️ **Landing Page**: [work-proof-eight.vercel.app](https://work-proof-eight.vercel.app/)
+- 🧠 **Main Page/User Website**: [coinbasecdphack.vercel.app](https://coinbasecdphack.vercel.app/)
 
 ---
 
